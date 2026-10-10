@@ -17,11 +17,7 @@ echo "Текущий статус и ожидаемые изменения ба�
 "$TG" status
 "$TG" migrate --dry-run --local
 
-echo "Перед публикацией убедитесь, что выбран НУЖНЫЙ бот в @BotFather."
-read -r -p "Для реальной публикации в Telegram Serverless введите DEPLOY: " approval
-if [[ "$approval" != "DEPLOY" ]]; then
-  echo "Публикация отменена."; exit 3
-fi
+echo "Целевой Telegram-бот определяется авторизацией tgcloud; перед запуском проверьте профиль."
 
 echo "Публикуем серверные модули и собранный Mini App..."
 "$TG" push
