@@ -2,7 +2,7 @@
 
 **Статус на 10.10.2026: бот `@servgo_smena_bot` и Mini App опубликованы в Telegram Serverless; база создана, webhook синхронизирован. 35 тестов прошли. Сайт QR рабочего места https://smena.servgo.ru/ опубликован с HTTPS.**
 
-Mini App: https://app8926504673.tgcloud.ai/ . В чате бота настроена кнопка «Открыть Смену». **Main Mini App включён и проверен через Bot API**. Осталось проверить QR → камера → фото в рабочей группе на телефоне. Проверка базы и подписей на платформе выполнена; реальный сценарий с камерой пока не подтверждён.
+Mini App: https://app8926504673.tgcloud.ai/ . В чате бота настроена кнопка «Открыть Смену». **Main Mini App включён и проверен через Bot API**. Пользователь сообщил о работающем минимальном сценарии с привязанными устройством и группой. Новый встроенный сканер и комментарии проверены в коде, на платформе и в изолированном предпросмотре; на реальном телефоне их ещё нужно проверить.
 
 **Развёртывание:** подробная инструкция [docs/TELEGRAM_SERVERLESS_DEPLOY.md](docs/TELEGRAM_SERVERLESS_DEPLOY.md). В GitHub Codespaces: `npm install --no-audit --no-fund` → `bash scripts/tgcloud_preflight.sh` → `npx --no-install tgcloud login` → `bash scripts/tgcloud_deploy.sh`. CLI access token вводится только в терминале или как Codespaces secret. Telegram Serverless не соединяется напрямую с VPS ServGo; `smena.servgo.ru` показывает подписанный QR без прямого доступа к Telegram-базе. Привязка и инструкция: [docs/SUBDOMAIN.md](docs/SUBDOMAIN.md).
 
