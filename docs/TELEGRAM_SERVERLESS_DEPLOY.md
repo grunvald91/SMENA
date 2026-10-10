@@ -26,7 +26,7 @@ bash scripts/tgcloud_deploy.sh
 
 При `tgcloud login` отдельный CLI-токен вводится **только в терминале Codespaces**. CLI сохранит его в `.tgcloud/credentials`, директория исключена из Git. Вместо интерактивного входа можно создать GitHub Codespaces secret `TGCLOUD_TOKEN` с доступом только к репозиторию SMENA. **Не использовать обычный Bot API token вместо CLI token.**
 
-`tgcloud_deploy.sh` не запускает GitHub Actions. Скрипт проверяет тесты и сборку, выводит `tgcloud status`, выполняет `migrate --dry-run --local`, требует явного ввода `DEPLOY`, затем делает `push`, `migrate --safe` и `webhook sync`. Он не использует `--force` и не удаляет ожидающие Telegram-обновления. В случае конфликтов, ручных или рискованных миграций **остановитесь и проверьте состояние**; не используйте `--yes` и `--drop-pending` автоматически.
+`tgcloud_deploy.sh` не запускает GitHub Actions. Скрипт проверяет тесты и сборку, выводит `tgcloud status`, выполняет `migrate --dry-run --local`, затем делает `push`, `migrate --safe` и `webhook sync`. Он не использует `--force` и не удаляет ожидающие Telegram-обновления. В случае конфликтов, ручных или рискованных миграций **остановитесь и проверьте состояние**; не используйте `--yes` и `--drop-pending` автоматически.
 
 После публикации посмотрите `tgcloud status`, `tgcloud webhook` и оставшиеся изменения `tgcloud migrate --dry-run`. В BotFather настройте Main Mini App по адресу, выданному `push`.
 
