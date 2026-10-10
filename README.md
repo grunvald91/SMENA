@@ -12,14 +12,14 @@ Telegram Serverless-бот для QR-подтверждения прихода/�
 - Сотрудник сканирует QR на экране, открывает Mini App и нажимает «Пришёл» или «Ушёл».
 - Активное устройство нельзя переоформить с того же Telegram-аккаунта на другую технику без подписанного отзыва старого ключа; при потере старого устройства требуется отдельная процедура восстановления (не реализована).
 - Защита от повторной открытой смены, чужой рабочей точки, старых/подменённых QR и закрытия по тому же коду.
-- Дополнительная фотография с подписью «На работе» или «Убыл» в рабочей группе (после QR-отметки, в течение 15 минут); бот хранит Telegram file_id, НЕ распознаёт лица или форму.
+- Обязательное селфи через фронтальную камеру Mini App сразу после выбора действия; бот отправляет фото в группу и сохраняет только Telegram `file_id` и ID сообщения. Нет выбора файлов из галереи; распознавания лиц нет.
 - `/report`, `/report YYYY-MM`, `/report YYYY-MM-DD YYYY-MM-DD`, `/problems` — только в личном чате владельца.
 - Начисления считаются в копейках; ставки и автоматические доплаты фиксируются на момент начала смены; пересчёт не переписывает старые ставки.
 - Отдельный слой `tgcloud/lib/service.js` как интерфейс инструментов для будущих AI-агентов, аудит операций.
 
 ## Начало работы после проверки ограничений
 
-1. Создать **приватный** GitHub-репозиторий `grunvald91/servgo-shifts` и загрузить файлы без папок `node_modules/`, `.tgcloud/`, `dist/`.
+1. Проект размещён в **приватном** GitHub-репозитории `grunvald91/SMENA`. Не добавляйте `node_modules/`, `.tgcloud/`, `dist/` в коммиты.
 2. Создать нового бота через `@BotFather`, включить **Serverless** и настроить **Main Mini App**, чтобы работали `t.me/<username>?startapp=scan_<token>`.
 3. Открыть проект в Codespaces. `npm install`, `npm run check`, `npm run build`.
 4. Внимательно проверить доступность `crypto.subtle` и `crypto.getRandomValues` в Telegram Serverless. Если они отсутствуют — QR-выдача **заблокирована по умолчанию**, нужен внешний криптографический проверяющий сервис или другой подтверждённый механизм. Не отключать проверку.
@@ -31,7 +31,7 @@ Telegram Serverless-бот для QR-подтверждения прихода/�
 
 - **Не подтверждена работа SDK на удалённой платформе:** локальные unit-тесты не заменяют интеграционный тест Telegram Serverless.
 - WebCrypto+IndexedDB запрещает простое копирование логина/пароля для выдачи QR, но **не доказывает аппаратную привязку** и не предотвращает прямую передачу действующего QR. Для строгого контроля нужен WebAuthn с проверенной аттестацией либо Android Keystore / attestation.
-- Для получения обычных фотографий с подписями в группах боту потребуются соответствующие настройки Telegram (доступ к сообщениям, например администраторские права или отключённый режим приватности).
+- Для отправки фотографии из Mini App в группу бот должен быть участником рабочей группы и иметь разрешение отправлять фотографии. Режим приватности сообщений для этого не требуется.
 - Нет распознавания лица, геозоны, проверки форменной одежды и предотвращения пересылки актуального QR в реальном времени.
 - Нет полноценной модели трудового законодательства: ночных/сверхурочных, праздничных, отпусков, больничных, НДФЛ и бухгалтерского утверждения. Результаты **только предварительные**.
 - Нет графиков и автоматических напоминаний (вне согласованного MVP). Нет интерфейса ручного исправления пропусков: они видны в `/problems` и пока требуют дальнейшей реализации.
@@ -42,7 +42,7 @@ Telegram Serverless-бот для QR-подтверждения прихода/�
 
 - `tgcloud/schema.js` — схема SQLite SDK Telegram.
 - `tgcloud/lib/` — бизнес-операции и чистая логика; используется всеми интерфейсами.
-- `tgcloud/handlers/message.js` — Telegram команды и фотографии.
+- `tgcloud/handlers/message.js` — Telegram-команды; фотографии отправляются только через Mini App endpoint.
 - `tgcloud/endpoints/*.js` — авторизованные функции Telegram Mini App.
 - `web/` — экран QR, отметки, отчёт.
 - `tests/` — автономные unit-тесты на Node.js.
@@ -51,9 +51,9 @@ Telegram Serverless-бот для QR-подтверждения прихода/�
 
 Документация Telegram Serverless: https://core.telegram.org/bots/serverless
 
-## QR → live selfie → Telegram group (prototype)
-1. Employee scans the kiosk QR and chooses **Пришёл** / **Ушёл** within the 30-second QR lifetime.
-2. Server saves a three-minute photo intent bound to the verified Telegram user, location, QR and action.
-3. Mini App requests permission for front-facing camera (`navigator.mediaDevices.getUserMedia`) and captures a frame directly from the video stream. There is no gallery chooser.
-4. `completePhotoShift` sends ephemeral JPEG bytes to the bound work group's Telegram chat via SDK `InputFile`, stores its `file_id` and message ID only, then commits the shift. Upload failure must not create an accepted shift.
-5. Device/browser compatibility and the Telegram Serverless request size limits require real-world testing. This approach prevents ordinary gallery selection but **cannot cryptographically prove a live human** or block advanced camera-stream spoofing.
+## QR → селфи → сообщение в Telegram (прототип)
+1. Сотрудник сканирует QR-код на рабочем устройстве и за 30 секунд выбирает «Пришёл» или «Ушёл».
+2. Backend создаёт на три минуты сессию фотоподтверждения, привязанную к Telegram ID сотрудника, QR и рабочей точке.
+3. Mini App запрашивает доступ к фронтальной камере через `navigator.mediaDevices.getUserMedia`, получает кадр из видеопотока и не предлагает загрузку файлов из галереи.
+4. `completePhotoShift` отправляет байты JPEG непосредственно в рабочую группу через SDK `InputFile`, сохраняет только `file_id` и `message_id` Telegram, после подтверждения делает запись в табеле. При ошибке отправки смена не подтверждается.
+5. Совместимость с реальными клиентами Telegram, лимиты данных endpoint и восстановление после частичного сбоя нужно проверить в рабочем окружении. **Веб-клиент не может гарантировать неподдельный физический видеопоток.**
