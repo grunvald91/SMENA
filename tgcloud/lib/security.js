@@ -1,4 +1,5 @@
 import { requireInput,DomainError } from './errors.js';
+import { encodeBase64,decodeBase64 } from './base64.js';
 const encoder=new TextEncoder();
 export function requireCrypto() {
   requireInput(!!globalThis.crypto?.getRandomValues && !!globalThis.crypto?.subtle,'CRYPTO_UNAVAILABLE','Нет проверенного WebCrypto в среде Telegram; безопасная QR-авторизация недоступна');
@@ -9,13 +10,12 @@ export function nonce(bytes=24) {
   return base64url(v);
 }
 export function base64url(bytes) {
-  let chars=''; for(let i=0;i<bytes.length;i++) chars+=String.fromCharCode(bytes[i]);
-  return btoa(chars).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+  return encodeBase64(bytes).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 }
 export function decodeBase64url(value) {
   requireInput(typeof value==='string' && /^[A-Za-z0-9_-]+$/.test(value) && value.length<1000,'BAD_SIGNATURE','Некорректная подпись');
-  const bin=atob(value.replaceAll('-','+').replaceAll('_','/')+'='.repeat((4-value.length%4)%4));
-  return Uint8Array.from(bin,c=>c.charCodeAt(0));
+  try {return decodeBase64(value.replaceAll('-','+').replaceAll('_','/')+'='.repeat((4-value.length%4)%4));}
+  catch {throw new DomainError('BAD_SIGNATURE','Некорректная подпись');}
 }
 export function pairingMessage(challengeId,nonceValue) {return `ServGoShift:QR:v1:${challengeId}:${nonceValue}`;}
 export async function verifyDeviceSignature(jwk,message,signatureBase64) {
