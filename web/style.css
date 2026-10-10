@@ -3,3 +3,5 @@
 @media(max-width:790px){main{padding:16px 15px 64px}.dashboard-header{align-items:flex-start;flex-direction:column}.stats-grid{grid-template-columns:repeat(2,1fr)}.columns{grid-template-columns:1fr}.dashboard-nav .tab{flex:0 0 auto}.panel{padding:17px}.stat{padding:16px;min-height:120px}.panel-head{align-items:flex-start;flex-direction:column}.report-total{flex-wrap:wrap}}
 @media(max-width:430px){.stats-grid{gap:8px}.stat{padding:12px;min-height:110px}.stat strong{font-size:20px}.dashboard-header .header-actions{width:100%;justify-content:space-between}.dashboard-nav .tab{padding:11px 12px}}
 @media(prefers-reduced-motion:reduce){button{transition:none}}
+
+.mini-btn{min-height:33px;padding:7px 10px;font-size:12px;white-space:nowrap}

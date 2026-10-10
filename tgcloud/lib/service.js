@@ -93,6 +93,26 @@ export async function createShiftTemplate(tgId,locationId,name,startTime,endTime
  await audit(org.id,tgId,'shift_template.created',result.id,values);
  return result;
 }
+export async function updateShiftTemplate(tgId,templateId,name,startTime,endTime,graceMinutes=5){
+ const org=await requireOwner(tgId);
+ const previous=await db.select().from(shiftTemplates).where(and(eq(shiftTemplates.orgId,org.id),eq(shiftTemplates.id,Number(templateId)),eq(shiftTemplates.active,1))).get();
+ requireInput(!!previous,'NOT_FOUND','Тип смены не найден');
+ const settings=validateTemplate(name,startTime,endTime,graceMinutes);
+ await db.update(shiftTemplates).set(settings).where(eq(shiftTemplates.id,previous.id)).run();
+ await audit(org.id,tgId,'shift_template.updated',previous.id,{before:{name:previous.name,startTime:previous.startTime,endTime:previous.endTime},after:settings});
+ return {id:previous.id,...settings};
+}
+export async function deleteShiftAssignment(tgId,assignmentId){
+ const org=await requireOwner(tgId);
+ const assignment=await db.select().from(shiftAssignments).where(and(eq(shiftAssignments.id,Number(assignmentId)),eq(shiftAssignments.orgId,org.id))).get();
+ requireInput(!!assignment,'NOT_FOUND','Назначение не найдено');
+ const started=await db.select().from(shifts).where(eq(shifts.assignmentId,assignment.id)).get();
+ requireInput(!started,'ALREADY_STARTED','Нельзя удалить назначение, для которого уже создана смена; нужна корректировка владельца');
+ const res=await db.delete(shiftAssignments).where(and(eq(shiftAssignments.id,assignment.id),eq(shiftAssignments.orgId,org.id))).run();
+ requireInput(res.rowsAffected===1,'CONFLICT','Не удалось удалить назначение');
+ await audit(org.id,tgId,'shift_assignment.deleted',assignment.id,{employeeId:assignment.employeeId,workDate:assignment.workDate});
+ return {id:assignment.id,deleted:true};
+}
 export async function assignShift(tgId,employeeId,templateId,workDate){
  const org=await requireOwner(tgId);parseISODate(workDate);
  const person=await db.select().from(employees).where(and(eq(employees.id,Number(employeeId)),eq(employees.orgId,org.id),eq(employees.active,1))).get();
@@ -297,7 +317,10 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
    const person=await db.select().from(employees).where(and(eq(employees.id,intent.employeeId),eq(employees.tgId,tgId),eq(employees.active,1))).get();
    requireInput(!!person,'FORBIDDEN','Сотрудник не активен');
    const shift=await db.select().from(shifts).where(and(eq(shifts.employeeId,person.id),isNull(shifts.endedAt))).get();
-   const template=intent.action==='out'&&shift?.templateId?await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,shift.templateId)).get():null;
+   let template=intent.action==='out'&&shift?.templateId?await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,shift.templateId)).get():null;
+   if(intent.action==='in'){const org=await db.select().from(organizations).where(eq(organizations.id,intent.orgId)).get();
+    const plan=await resolveShiftPlan(org,loc,person,intent.createdAt);
+    if(plan.templateId)template=await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,plan.templateId)).get();}
    const photo=await api.sendPhoto({chat_id:loc.chatId,
     photo:new InputFile(bytes,'shift-selfie.jpg',{type:'image/jpeg'}),
     caption:`📷 ServGo Смена · ${intent.action==='in'?'Приход':'Уход'}\n${person.name} · ${loc.name}${template?' · '+template.name:''}\nФото-подтверждение; запись смены проверяется системой.`});

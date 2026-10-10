@@ -207,10 +207,25 @@ function dashboardSchedulePanel(d){
   await call('ownerAssignShift',{employeeId:Number(eSelect.select.value),templateId:Number(tSelect.select.value),workDate:day.input.value});
   msg('Смена назначена');await refreshDashboard();
  }catch(err){msg(err.message,true);}});
- const templatesTable=table(['Точка','Смена','Время','Допуск'],d.templates.map(t=>[lookup(d.locations,t.locationId)?.name||t.locationId,t.name,`${t.startTime}–${t.endTime}`,`${t.graceMinutes} мин`]));
- const rosterTable=table(['Дата','Сотрудник','Смена','Состояние'],d.assignments.map(a=>[
+ const templatesTable=table(['Точка','Смена','Время','Допуск','Действие'],d.templates.map(t=>[
+  lookup(d.locations,t.locationId)?.name||t.locationId,t.name,`${t.startTime}–${t.endTime}`,`${t.graceMinutes} мин`,
+  ui('button',{className:'outline mini-btn',onclick:async()=>{
+   const name=prompt('Название смены',t.name);if(name===null)return;
+   const startTime=prompt('Начало, ЧЧ:ММ',t.startTime);if(startTime===null)return;
+   const endTime=prompt('Окончание, ЧЧ:ММ',t.endTime);if(endTime===null)return;
+   const graceMinutes=prompt('Допуск в минутах',String(t.graceMinutes));if(graceMinutes===null)return;
+   try{await call('ownerUpdateTemplate',{templateId:t.id,name,startTime,endTime,graceMinutes:Number(graceMinutes)});
+    msg('Тип смены обновлён');await refreshDashboard();}catch(e){msg(e.message,true);}
+  }},'Изменить')
+ ]));
+ const rosterTable=table(['Дата','Сотрудник','Смена','Состояние','Действие'],d.assignments.map(a=>[
   a.workDate,lookup(d.employees,a.employeeId)?.name||a.employeeId,a.templateName,
-  a.status==='completed'?'Завершена':a.status==='open'?'Открыта':a.status==='missing'?'Нет отметки':'По графику'
+  a.status==='completed'?'Завершена':a.status==='open'?'Открыта':a.status==='missing'?'Нет отметки':'По графику',
+  a.shiftId?'Зафиксировано':ui('button',{className:'outline mini-btn',onclick:async()=>{
+   if(!confirm('Снять назначение сотрудника на '+a.workDate+'?'))return;
+   try{await call('ownerDeleteAssignment',{assignmentId:a.assignmentId});msg('Назначение удалено');await refreshDashboard();}
+   catch(e){msg(e.message,true);}
+  }},'Удалить')
  ]));
  return ui('div',{className:'dashboard-stack'},sectionTitle('График сотрудников','Утренняя и вечерняя смены настраиваются отдельно; назначения сохраняются по датам.'),
   ui('div',{className:'columns'},ui('section',{className:'panel'},ui('h3',{},'Добавить тип смены'),creation),ui('section',{className:'panel'},ui('h3',{},'Назначить смену'),assignment)),
@@ -255,7 +270,26 @@ function dashboardReportsPanel(d){
      ui('p',{className:'muted'},'Пропущенных назначенных смен за период не обнаружено.')));
 }
 function dashboardSettingsPanel(d){
- return ui('div',{className:'dashboard-stack'},sectionTitle('Настройки','Организации и рабочие группы, привязанные к Telegram.'),
+ const name=textField('ФИО сотрудника');const tgId=textField('Telegram ID','number');const rate=textField('Ставка за час, ₽','number','300');
+ const employeeForm=ui('form',{className:'form-grid'},name.field,tgId.field,rate.field,ui('button',{type:'submit'},'Добавить сотрудника'));
+ employeeForm.addEventListener('submit',async e=>{e.preventDefault();try{
+  await call('ownerManageEmployee',{action:'add',tgId:Number(tgId.input.value),name:name.input.value,hourlyKopeks:Math.round(Number(rate.input.value)*100)});
+  msg('Сотрудник добавлен');await refreshDashboard();}catch(err){msg(err.message,true);}});
+ const edit=makeSelect('Сотрудник',d.employees.map(x=>({id:x.tgId,name:x.name})));
+ const newRate=textField('Почасовая ставка, ₽','number','300');
+ const editRate=ui('form',{className:'form-grid'},edit.field,newRate.field,ui('button',{type:'submit'},'Изменить ставку'));
+ editRate.addEventListener('submit',async e=>{e.preventDefault();try{
+  await call('ownerManageEmployee',{action:'rate',tgId:Number(edit.select.value),hourlyKopeks:Math.round(Number(newRate.input.value)*100)});
+  msg('Новая ставка применяется к будущим сменам');await refreshDashboard();}catch(err){msg(err.message,true);}});
+ const addShiftBonus=makeSelect('Сотрудник для надбавки',d.employees.map(x=>({id:x.tgId,name:x.name})));
+ const bonus=textField('Надбавка за завершённую смену, ₽','number','0');
+ const editBonus=ui('form',{className:'form-grid'},addShiftBonus.field,bonus.field,ui('button',{type:'submit'},'Сохранить надбавку'));
+ editBonus.addEventListener('submit',async e=>{e.preventDefault();try{
+  await call('ownerManageEmployee',{action:'shiftBonus',tgId:Number(addShiftBonus.select.value),shiftBonusKopeks:Math.round(Number(bonus.input.value)*100)});
+  msg('Надбавка настроена');await refreshDashboard();}catch(err){msg(err.message,true);}});
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Настройки','Организации, сотрудники, тарифы и рабочие группы.'),
+  ui('div',{className:'columns'},ui('section',{className:'panel'},ui('h3',{},'Новый сотрудник'),employeeForm),ui('section',{className:'panel'},ui('h3',{},'Изменить ставку'),editRate)),
+  ui('section',{className:'panel'},ui('h3',{},'Надбавка за смену'),editBonus),
   ui('section',{className:'panel'},ui('h3',{},d.organization.name),ui('p',{className:'muted'},`Часовой пояс: ${d.organization.timezone}`),
    table(['Точка','Telegram-группа','График точки (старый режим)'],d.locations.map(l=>[l.name,l.chatId||'Нет привязки',l.plannedStartTime?`${l.plannedStartTime}–${l.plannedEndTime}`:'—']))),
   ui('section',{className:'panel'},ui('h3',{},'Безопасность'),
