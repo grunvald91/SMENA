@@ -242,7 +242,7 @@ export async function revokeKioskDevice(tgId,proof){
  await db.update(devices).set({revokedAt:now()}).where(and(eq(devices.id,dev.id),isNull(devices.revokedAt))).run();
  await audit(org.id,tgId,'device.revoked',dev.id,{locationId:dev.locationId});return {deviceId:dev.id,revoked:true};
 }
-async function resolvePhotoQr(tgId,token){
+export async function resolvePhotoQr(tgId,token){
  requireInput(isShiftToken(token),'BAD_QR','Некорректный код');
  if(token.startsWith('k1_')){
   const parsed=parseKioskToken(token,now());
@@ -267,7 +267,7 @@ async function confirmPhotoMessage(intent){
    db.select().from(shifts).where(eq(shifts.id,intent.shiftId)).get()]);
   const template=shift?.templateId?await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,shift.templateId)).get():null;
   requireInput(!!loc&&!!org&&!!person&&!!shift,'NOT_FOUND','Данные отметки не найдены');
-  const caption=shiftPhotoCaption({action:intent.action,employee:person.name,location:loc.name,templateName:template?.name,eventAt:intent.createdAt,timezone:org.timezone,confirmed:true,shiftId:shift.id,durationSeconds:shift.endedAt?shift.endedAt-shift.startedAt:null});
+  const caption=shiftPhotoCaption({action:intent.action,employee:person.name,location:loc.name,templateName:template?.name,eventAt:intent.createdAt,timezone:org.timezone,confirmed:true,shiftId:shift.id,durationSeconds:shift.endedAt?shift.endedAt-shift.startedAt:null,comment:intent.closeComment});
   try{await api.editMessageCaption({chat_id:loc.chatId,message_id:intent.photoMessageId,caption});}
   catch(e){if(!String(e?.message||e).includes('message is not modified'))throw e;}
   return true;
@@ -374,7 +374,7 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
    const org=await db.select().from(organizations).where(eq(organizations.id,intent.orgId)).get();
    const photo=await api.sendPhoto({chat_id:loc.chatId,
     photo:new InputFile(bytes,'shift-selfie.jpg',{type:'image/jpeg'}),
-    caption:shiftPhotoCaption({action:intent.action,employee:person.name,location:loc.name,templateName:template?.name,eventAt:intent.createdAt,timezone:org.timezone})});
+    caption:shiftPhotoCaption({action:intent.action,employee:person.name,location:loc.name,templateName:template?.name,eventAt:intent.createdAt,timezone:org.timezone,comment:note})});
    const fileId=photo.photo?.at(-1)?.file_id;
    requireInput(!!fileId&&!!photo.message_id,'TELEGRAM_PHOTO','Telegram не вернул подтверждение фотографии');
    await db.update(photoIntents).set({status:'sent',photoFileId:fileId,photoMessageId:photo.message_id}).where(eq(photoIntents.id,intent.id)).run();

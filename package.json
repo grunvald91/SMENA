@@ -6,7 +6,7 @@
   "description": "ServGo Смена — Telegram Serverless attendance and payroll preview",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check tgcloud/schema.js && node --check tgcloud/handlers/message.js && node --check tgcloud/lib/service.js && node --check tgcloud/lib/security.js && node --check web/main.js && npm test",
+    "check": "node --check tgcloud/schema.js && node --check tgcloud/handlers/message.js && node --check tgcloud/lib/service.js && node --check tgcloud/lib/security.js && node --check tgcloud/lib/control.js && node --check web/main.js && node --check web/control.js && npm test",
     "build": "vite build",
     "deploy": "npm run build && tgcloud push",
     "status": "tgcloud status",

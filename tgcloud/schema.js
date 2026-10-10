@@ -71,3 +71,17 @@ export const photoIntents=table('photo_intents',{
  photoFileId:text('photo_file_id'),photoMessageId:integer('photo_message_id'),shiftId:integer('shift_id'),
  closeComment:text('close_comment')
 },t=>({employee:index('idx_photo_intent_actor').on(t.actorTgId,t.createdAt)}));
+
+// Control tasks snapshot recipients. Images remain in Telegram, never in SQLite.
+export const controlRequests=table('control_requests',{
+ id:text('id').primaryKey(),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
+ instruction:text('instruction').notNull(),deadlineAt:integer('deadline_at').notNull(),
+ targets:json('targets').notNull(),createdBy:integer('created_by').notNull(),createdAt:integer('created_at').notNull(),
+ notificationState:text('notification_state').notNull().default('pending'),messageId:integer('message_id')
+},t=>({org:index('idx_control_requests_org').on(t.orgId,t.createdAt)}));
+export const controlSubmissions=table('control_submissions',{
+ id:text('id').primaryKey(),requestId:text('request_id').notNull(),orgId:integer('org_id').notNull(),
+ employeeId:integer('employee_id').notNull(),deviceId:integer('device_id').notNull(),createdAt:integer('created_at').notNull(),expiresAt:integer('expires_at').notNull(),
+ status:text('status').notNull().default('pending'),comment:text('comment'),completedAt:integer('completed_at'),
+ photos:json('photos')
+},t=>({recipient:uniqueIndex('uq_control_recipient').on(t.requestId,t.employeeId)}));

@@ -2,6 +2,8 @@ import QRCode from 'qrcode';
 import './style.css';
 import {isShiftToken} from '../tgcloud/lib/kiosk-token.js';
 import {startTelegramQrScan} from './qr-scan.js';
+import {capturePortrait} from './portrait.js';
+import {createControlUI} from './control.js';
 const T=window.Telegram?.WebApp;
 const root=document.getElementById('root');
 const state={context:null,device:null,displayTimer:null,issuing:false,stopCamera:null};
@@ -117,7 +119,7 @@ async function showCamera(intent){
   }
  }
  panel.append(element('label',{className:'field',for:'attendance-comment'},review?.required?'Комментарий / причина (обязательно)':'Комментарий (необязательно)'),reason,
-  element('p',{className:'muted'},'Комментарий сохранится в отметке и будет доступен руководителю.'));
+  element('p',{className:'muted'},'Комментарий будет опубликован вместе с фото в рабочей группе.'));
  const video=element('video',{autoplay:'',playsinline:'',muted:'',className:'selfie-video'});
  video.muted=true;video.setAttribute('playsinline','');
  const take=element('button',{disabled:true},'Сфотографировать');
@@ -138,11 +140,7 @@ async function showCamera(intent){
   if(intent.closeReview?.required && (!reason || reason.value.trim().length<5)){result.textContent='Укажите причину отклонения от графика (не менее 5 символов).';return;}
   if(video.videoWidth<1||video.videoHeight<1){result.textContent='Видеопоток не готов. Повторите.';return;}
   const comment=reason.value.trim();reason.disabled=true;
-  const canvas=document.createElement('canvas');
-  const ratio=Math.min(1,900/video.videoWidth,900/video.videoHeight);
-  canvas.width=Math.max(1,Math.floor(video.videoWidth*ratio));canvas.height=Math.max(1,Math.floor(video.videoHeight*ratio));
-  canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
-  // Captures a frame from a camera stream; never asks the employee to upload a file.
+  const canvas=capturePortrait(video);
   captured=canvas.toDataURL('image/jpeg',0.75).split(',')[1];
   stop();video.replaceWith(element('img',{src:canvas.toDataURL('image/jpeg',0.75),className:'selfie-video',alt:'Только что сделанное фото'}));
   take.textContent='Отправить фото и отметить смену';
@@ -317,7 +315,7 @@ function renderDashboard(){
  period.addEventListener('change',()=>{dashboard.period=period.value;refreshDashboard().catch(e=>msg(e.message,true));});
  const header=ui('header',{className:'dashboard-header'},ui('div',{},ui('span',{className:'eyebrow'},'ServGo / управление персоналом'),
   ui('h1',{},'Смена'),ui('p',{className:'muted'},d.organization.name)),
-  ui('div',{className:'header-actions'},scanButton(),period,ui('button',{className:'outline',onclick:renderHome},'QR-устройство')));
+  ui('div',{className:'header-actions'},scanButton(),controlUI.button(),period,ui('button',{className:'outline',onclick:renderHome},'QR-устройство')));
  const nav=ui('nav',{className:'dashboard-nav'},...[
   ['overview','Обзор'],['schedule','График'],['analytics','Аналитика'],['reports','Отчёты'],['settings','Настройки']
  ].map(([id,title])=>navButton(id,title)));
@@ -325,10 +323,11 @@ function renderDashboard(){
   dashboard.active==='analytics'?dashboardAnalyticsPanel(d):dashboard.active==='reports'?dashboardReportsPanel(d):dashboardSettingsPanel(d);
  render(ui('div',{className:'dashboard'},header,nav,current));
 }
+const controlUI=createControlUI({element,render,call,state,T,home:renderHome,msg});
 function renderHome(){
  const owner=state.context?.owner;
  const box=element('section',{className:'panel'},element('h1',{},'ServGo Смена'),
-  element('p',{},owner?`Организация: ${owner.name}`:'Для открытия и закрытия смен сканируйте QR на рабочем месте.'),scanButton());
+  element('p',{},owner?`Организация: ${owner.name}`:'Для открытия и закрытия смен сканируйте QR на рабочем месте.'),scanButton(),controlUI.button());
  if(owner){
   const choices=element('select');for(const loc of owner.locations)choices.append(element('option',{value:loc.id},`${loc.name} (#${loc.id})`));
   const pointName=element('input',{type:'text',maxlength:100,value:owner.locations[0]?.name||'',placeholder:'Название рабочей точки'});
@@ -368,6 +367,6 @@ function renderReport(r){
   state.context=await call('getContext',{});
   try{state.device=JSON.parse(localStorage.getItem('servgo-kiosk-device')||'null');}catch{state.device=null;}
   const token=state.context.scanToken || new URLSearchParams(location.search).get('scan');
-  if(token)await showScan(token);else renderHome();
+  if(token)await showScan(token);else if(state.context.controlRequested)await controlUI.show();else renderHome();
  }catch(e){render(element('section',{className:'panel'},element('h1',{},'ServGo Смена'),element('p',{className:'error'},e.message)));}
 })();

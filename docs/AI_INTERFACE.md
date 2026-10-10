@@ -39,6 +39,15 @@ Telegram commands, Mini App endpoints and future AI tools call **the same domain
 
 ## Attendance comments and point names
 
-- `completePhotoShift` accepts optional `comment` for both arrival and departure; legacy `closeComment` remains accepted when `comment` is absent. Text is trimmed and limited to 500 characters. Required departure reasons are still enforced server-side. Comments stay private to the owner.
+- `completePhotoShift` accepts optional `comment` for both arrival and departure; legacy `closeComment` remains accepted when `comment` is absent. Text is trimmed and limited to 500 characters. Required departure reasons are still enforced server-side. Comments are public in the work group with the attendance photo (explicitly requested by the user).
 - Arrival comments are stored in `shift_events.note` and the existing photo intent field; departure comments also remain in `shifts.close_comment`. Owner dashboard history includes `startComment` and `closeComment`; employee context and group captions exclude comments.
 - `ownerLocationName` is owner-authorized, checks the point belongs to the same organization, accepts 2–100 characters and audits the rename. No group/device rebinding or schema change is needed.
+
+## Control endpoints
+
+- `controlContext`: signed-in owner gets own requests and active recipient selectors; an employee gets only assigned tasks. No salary data.
+- `createControl`: owner-only; client requestId is a 32-character idempotency key, locationId, employeeId (`all` snapshots active open shifts on the selected location), instruction 3–300 characters, deadline `YYYY-MM-DDTHH:mm` in organization timezone (future, within 31 days). Sends the task to that location's bound group.
+- `notifyControl`: owner-only retry after a definitive Telegram rejection; unknown delivery cannot be re-sent automatically.
+- `beginControl`: assigned active employee and valid 30-second workplace QR; returns a 20-minute session.
+- `completeControl`: session owner only; 1–10 JPEGs, total decoded payload ≤1 MB, comment ≤500 characters. Publishes one photo or one album with public comment, deadline and server submission time; late responses remain allowed and labelled. Completed retries are idempotent; uncertain delivery is blocked to avoid duplicate publication.
+- No scheduling, automatic reminders, payroll effects, gallery upload or new Telegram permissions.

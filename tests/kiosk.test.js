@@ -32,7 +32,7 @@ test('pairing round trips public key only; revocation cannot be used as attendan
  assert.equal(await verifyDeviceSignature(jwk,kioskMessage(p.payload),p.signature),false);
  assert.throws(()=>parseKioskToken(revoke,stamp+60,'revoke'),e=>e.code==='EXPIRED');
 });
-test('photo captions show server attendance time, confirmation and work duration without salary or private comments',()=>{
+test('photo captions show server attendance time, confirmation and work duration without salary or extra service metadata',()=>{
  const caption=shiftPhotoCaption({action:'out',employee:'Иван',location:'Точка',templateName:'Утренняя',eventAt:Date.parse('2026-10-10T08:45:30Z')/1000,confirmed:true,shiftId:42,durationSeconds:21660});
  assert.match(caption,/✅ Уход/);assert.match(caption,/10.10.2026.*11:45:30/);assert.match(caption,/GMT\+3/);assert.match(caption,/6 ч 1 мин/);assert.doesNotMatch(caption,/ставка|₽|причина|смена #|ServGo|подтверждена|Утренняя/i);
  assert.match(shiftPhotoCaption({action:'in',employee:'Иван',location:'Точка',eventAt:1791633600}),/ещё не подтверждена/);
