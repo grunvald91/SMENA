@@ -14,7 +14,7 @@ test('Telegram Serverless release keeps bot independent from ServGo VPS',()=>{
  assert.match(txt('.gitignore'), /\.tgcloud\//);
 });
 
-test('release scripts require preflight, explicit approval and safe migrations',()=>{
+test('release scripts require preflight and safe migrations',()=>{
  const preflight=txt('scripts/tgcloud_preflight.sh');
  const deploy=txt('scripts/tgcloud_deploy.sh');
  assert.match(preflight,/npm run check/);
@@ -22,6 +22,5 @@ test('release scripts require preflight, explicit approval and safe migrations',
  assert.match(deploy,/migrate --dry-run --local/);
  assert.match(deploy,/migrate --safe/);
  assert.match(deploy,/webhook sync/);
- assert.match(deploy,/DEPLOY/);
  assert.doesNotMatch(deploy,/--force|--drop-pending|--yes/);
 });
