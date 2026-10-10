@@ -1,5 +1,6 @@
 import { overlapSeconds } from './time.js';
 import { requireInput } from './errors.js';
+import { closingReview } from './schedule.js';
 // Monetary values in integer kopeks. This is a PREVIEW, not statutory payroll or net pay.
 export function computePreview({employees,shifts,bonuses=[],period}) {
   const entries=employees.map(emp=>{
@@ -17,8 +18,16 @@ export function computePreview({employees,shifts,bonuses=[],period}) {
     return {employeeId:emp.id,name:emp.name,seconds,hours:Number((seconds/3600).toFixed(2)),
       baseKopeks,bonusKopeks,grossKopeks:baseKopeks+bonusKopeks,unclosed:incomplete.length};
   });
-  const sum=field=>entries.reduce((total,e)=>total+e[field],0);
-  return {period:{start:period.start,endExclusive:period.end,tz:period.tz},entries,
+  const exceptions=[];
+ for(const s of shifts){
+  if(s.endedAt==null||s.plannedEndAt==null||s.endedAt*1000<period.startMs||s.endedAt*1000>=period.endMs)continue;
+  const review=closingReview(s.endedAt,s.plannedEndAt,s.closeGraceMinutes??5);
+  if(review.required)exceptions.push({shiftId:s.id,employeeId:s.employeeId,name:employees.find(e=>e.id===s.employeeId)?.name||'Сотрудник',
+    status:review.status,differenceMinutes:review.differenceMinutes,plannedEndAt:s.plannedEndAt,endedAt:s.endedAt,closeComment:s.closeComment||null});
+ }
+ exceptions.sort((a,b)=>a.endedAt-b.endedAt);
+ const sum=field=>entries.reduce((total,e)=>total+e[field],0);
+  return {period:{start:period.start,endExclusive:period.end,tz:period.tz},entries,exceptions,
     totals:{seconds:sum('seconds'),baseKopeks:sum('baseKopeks'),bonusKopeks:sum('bonusKopeks'),grossKopeks:sum('grossKopeks'),unclosed:sum('unclosed')}};
 }
 export function rubles(kopeks){return (kopeks/100).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽';}

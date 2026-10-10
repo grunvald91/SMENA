@@ -33,3 +33,10 @@
 - The bot sends transient image bytes directly to the location's Telegram group using `InputFile`; SQLite only stores `file_id` and the Telegram message reference. Telegram history is not guaranteed immutable or free of storage/access constraints.
 - Photo must reach Telegram before shift completion. If message upload succeeds but DB recording fails, recovery can result in duplicate group photos; test and harden compensating actions before production.
 - Photos and face images may constitute biometric personal data when used for identification. Confirm relevant consents, purpose, retention and RF localization rules before allowing actual employees to use this system.
+
+## Shift end comments and scheduling
+
+- Employee comments may contain personal details. Store them only as required, and show them only in owner-authorized reporting surfaces, not Telegram group photo captions.
+- Validate comments on the server **before photo upload**; never allow clients to bypass the check by modifying the Mini App form.
+- Freeze planned end and grace at the beginning of a shift to prevent schedule manipulation after check-in. Attendance timestamps come from the server at QR validation, not client clocks or the time the photo upload finishes.
+- The first version uses **per-location hours** and optional tolerance. Employee-specific rota, public holidays, breaks, DST ambiguity resolution, and retroactive corrections need separate policy/design work.

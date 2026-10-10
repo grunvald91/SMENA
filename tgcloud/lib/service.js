@@ -6,6 +6,7 @@ import { nonce, pairingMessage,verifyDeviceSignature,requireCrypto,validateProof
 import { reportPeriod,formatDate,startOfLocalDay } from './time.js';
 import { computePreview,rubles } from './payroll.js';
 import { decodeSelfie } from './photo.js';
+import { minuteOfDay,validateGrace,plannedEndForStart,closingReview,validateCloseComment } from './schedule.js';
 const now=()=>Math.floor(Date.now()/1000);
 const validId=x=>Number.isSafeInteger(Number(x))&&Number(x)>0;
 async function audit(orgId,tgId,action,refId,data={}) {
@@ -67,6 +68,17 @@ export async function createBonus(tgId,employeeTgId,amountKopeks,reason){
  requireInput(typeof reason==='string'&&reason.trim().length>=3&&reason.length<=200,'BAD_REASON','Укажите причину надбавки');
  const [b]=await db.insert(bonuses).values({orgId:org.id,employeeId:person.id,date:formatDate(Date.now(),org.timezone),amountKopeks,reason:reason.trim(),actorTgId:tgId}).returning().run();
  await audit(org.id,tgId,'bonus.added',b.id,{employeeId:person.id,amountKopeks,reason});return b;
+}
+export async function setLocationHours(tgId,locationId,startTime,endTime,graceMinutes=5){
+ const org=await requireOwner(tgId);
+ const loc=await db.select().from(locations).where(and(eq(locations.id,Number(locationId)),eq(locations.orgId,org.id))).get();
+ requireInput(!!loc,'NOT_FOUND','Рабочая точка не найдена');
+ const start=minuteOfDay(startTime),end=minuteOfDay(endTime);
+ requireInput(start!==end,'BAD_HOURS','Начало и конец смены не могут совпадать');
+ validateGrace(graceMinutes);
+ await db.update(locations).set({plannedStartTime:startTime,plannedEndTime:endTime,closeGraceMinutes:graceMinutes}).where(eq(locations.id,loc.id)).run();
+ await audit(org.id,tgId,'location.hours_changed',loc.id,{before:{start:loc.plannedStartTime,end:loc.plannedEndTime,grace:loc.closeGraceMinutes},after:{start:startTime,end:endTime,grace:graceMinutes}});
+ return {locationId:loc.id,startTime,endTime,graceMinutes};
 }
 export async function listLocations(tgId) {
  const org=await requireOwner(tgId);
@@ -143,11 +155,16 @@ export async function scanShift(tgId,token,action,proof=null){
  const person=await db.select().from(employees).where(and(eq(employees.orgId,qr.orgId),eq(employees.tgId,Number(tgId)),eq(employees.active,1))).get();
  requireInput(!!person,'FORBIDDEN','Вы не зарегистрированы как сотрудник этой организации');
  const opened=await db.select().from(shifts).where(and(eq(shifts.employeeId,person.id),isNull(shifts.endedAt))).get();
- const sec=now();
+ const sec=proof?.eventAt??now();
+ requireInput(Number.isSafeInteger(sec)&&sec>0&&sec<=now()+5,'BAD_EVENT_TIME','Некорректное время события');
  if(action==='in') {
    requireInput(!opened,'SHIFT_ALREADY_OPEN','У вас уже есть открытая смена');
+   const loc=await db.select().from(locations).where(and(eq(locations.id,qr.locationId),eq(locations.orgId,qr.orgId))).get();
+   const org=await db.select().from(organizations).where(eq(organizations.id,qr.orgId)).get();
+   requireInput(!!loc&&!!org,'BAD_LOCATION','Рабочая точка недоступна');
+   const plannedEndAt=plannedEndForStart(sec,loc,org.timezone);
    let record;
-   try {[record]=await db.insert(shifts).values({orgId:qr.orgId,locationId:qr.locationId,employeeId:person.id,startedAt:sec,sourceIn:token,hourlyKopeksSnapshot:person.hourlyKopeks,shiftBonusKopeksSnapshot:person.shiftBonusKopeks||0,createdAt:sec}).returning().run();}
+   try {[record]=await db.insert(shifts).values({orgId:qr.orgId,locationId:qr.locationId,employeeId:person.id,startedAt:sec,sourceIn:token,hourlyKopeksSnapshot:person.hourlyKopeks,shiftBonusKopeksSnapshot:person.shiftBonusKopeks||0,createdAt:sec,plannedEndAt,closeGraceMinutes:loc.closeGraceMinutes??5}).returning().run();}
    catch {throw new DomainError('SHIFT_ALREADY_OPEN','Не удалось начать смену: возможно, она уже открыта');}
    await db.insert(shiftEvents).values({shiftId:record.id,actorTgId:tgId,action:'in',at:sec,qrToken:token,photoFileId:proof?.photoFileId||null}).run();
    return {action,shiftId:record.id,at:sec,name:person.name};
@@ -156,10 +173,12 @@ export async function scanShift(tgId,token,action,proof=null){
  requireInput(opened.locationId===qr.locationId,'WRONG_LOCATION','Смена начата на другой точке; требуется исправление владельца');
  requireInput(opened.sourceIn!==token,'SAME_QR','Для ухода необходим новый QR-код');
  requireInput(sec>opened.startedAt,'BAD_DURATION','Окончание должно быть позже начала');
- const result=await db.update(shifts).set({endedAt:sec,sourceOut:token}).where(and(eq(shifts.id,opened.id),isNull(shifts.endedAt))).run();
+ const review=closingReview(sec,opened.plannedEndAt,opened.closeGraceMinutes??5);
+ const comment=validateCloseComment(proof?.closeComment,review);
+ const result=await db.update(shifts).set({endedAt:sec,sourceOut:token,closeComment:comment}).where(and(eq(shifts.id,opened.id),isNull(shifts.endedAt))).run();
  requireInput(result.rowsAffected===1,'SHIFT_ALREADY_CLOSED','Эта смена уже закрыта');
- await db.insert(shiftEvents).values({shiftId:opened.id,actorTgId:tgId,action:'out',at:sec,qrToken:token,photoFileId:proof?.photoFileId||null}).run();
- return {action,shiftId:opened.id,at:sec,name:person.name,hours:Number(((sec-opened.startedAt)/3600).toFixed(2))};
+ await db.insert(shiftEvents).values({shiftId:opened.id,actorTgId:tgId,action:'out',at:sec,qrToken:token,photoFileId:proof?.photoFileId||null,note:comment}).run();
+ return {action,shiftId:opened.id,at:sec,name:person.name,hours:Number(((sec-opened.startedAt)/3600).toFixed(2)),closeReview:review,closeComment:comment};
 }
 // A short-lived, authenticated photo intent preserves a 30s QR check while the user
 // grants camera permission and takes a picture. A picture is REQUIRED to finish.
@@ -181,10 +200,11 @@ export async function beginPhotoShift(tgId,token,action){
  const sec=now(),intent={id:nonce(24),qrToken:token,orgId:qr.orgId,locationId:loc.id,
   employeeId:person.id,actorTgId:tgId,action,createdAt:sec,expiresAt:sec+180,status:'pending'};
  await db.insert(photoIntents).values(intent).run();
- return {intentId:intent.id,expiresAt:intent.expiresAt,location:loc.name,employee:person.name,action};
+ const closeReview=action==='out'?closingReview(sec,opened.plannedEndAt,opened.closeGraceMinutes??5):null;
+ return {intentId:intent.id,expiresAt:intent.expiresAt,location:loc.name,employee:person.name,action,closeReview};
 }
 
-export async function completePhotoShift(tgId,intentId,selfieBase64){
+export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment){
  requireInput(validId(tgId),'UNAUTHORIZED','Нет Telegram ID');
  requireInput(typeof intentId==='string'&&/^[A-Za-z0-9_-]{32}$/.test(intentId),'BAD_INTENT','Некорректная сессия');
  let intent=await db.select().from(photoIntents).where(and(eq(photoIntents.id,intentId),eq(photoIntents.actorTgId,tgId))).get();
@@ -195,8 +215,17 @@ export async function completePhotoShift(tgId,intentId,selfieBase64){
  const device=await db.select().from(devices).where(and(eq(devices.id,deviceQr.deviceId),isNull(devices.revokedAt))).get();
  requireInput(!!device,'DEVICE_REVOKED','Рабочее устройство больше не активно');
  if(intent.status==='pending'){
+  // Validate the reason BEFORE sending anything to the group; never leave a photo
+  // for a rejected early/late close. Use the time the QR was scanned.
+  let note=null;
+  if(intent.action==='out'){
+   const opened=await db.select().from(shifts).where(and(eq(shifts.employeeId,intent.employeeId),isNull(shifts.endedAt))).get();
+   requireInput(!!opened&&opened.locationId===intent.locationId,'NO_OPEN_SHIFT','Смена не найдена или уже закрыта');
+   const review=closingReview(intent.createdAt,opened.plannedEndAt,opened.closeGraceMinutes??5);
+   note=validateCloseComment(closeComment,review);
+  }
   const bytes=decodeSelfie(selfieBase64);
-  const reserved=await db.update(photoIntents).set({status:'uploading'}).where(and(eq(photoIntents.id,intent.id),eq(photoIntents.status,'pending'))).run();
+  const reserved=await db.update(photoIntents).set({status:'uploading',closeComment:note}).where(and(eq(photoIntents.id,intent.id),eq(photoIntents.status,'pending'))).run();
   requireInput(reserved.rowsAffected===1,'IN_PROGRESS','Фотография уже обрабатывается');
   try{
    const loc=await db.select().from(locations).where(eq(locations.id,intent.locationId)).get();
@@ -218,7 +247,7 @@ export async function completePhotoShift(tgId,intentId,selfieBase64){
  }
  intent=await db.select().from(photoIntents).where(eq(photoIntents.id,intentId)).get();
  requireInput(intent.status==='sent','IN_PROGRESS','Операция ещё обрабатывается');
- const result=await scanShift(tgId,intent.qrToken,intent.action,{validatedAt:intent.createdAt,photoFileId:intent.photoFileId});
+ const result=await scanShift(tgId,intent.qrToken,intent.action,{validatedAt:intent.createdAt,eventAt:intent.createdAt,photoFileId:intent.photoFileId,closeComment:intent.closeComment});
  await db.update(photoIntents).set({status:'done',shiftId:result.shiftId}).where(and(eq(photoIntents.id,intent.id),eq(photoIntents.status,'sent'))).run();
  return {...result,photoMessageId:intent.photoMessageId};
 }
@@ -242,6 +271,13 @@ export async function findProblems(tgId,stamp=Date.now()) {
 export function formatReport(r){
  let lines=[`📊 ServGo Смена — предварительное начисление`, `Период: ${r.period.start} — до ${r.period.endExclusive} (не включая)`, `Часовой пояс: ${r.period.tz}`,''];
  for(const e of r.entries){lines.push(`${e.name}: ${e.hours} ч × ставка = ${rubles(e.baseKopeks)}; надбавки ${rubles(e.bonusKopeks)}; итого ${rubles(e.grossKopeks)}${e.unclosed?' ⚠️ незакрытых смен: '+e.unclosed:''}`);}
+ if(r.exceptions?.length){
+  lines.push('',`📝 Отклонения от графика (${r.exceptions.length}):`);
+  for(const item of r.exceptions){
+   const when=sec=>new Date(sec*1000).toLocaleString('ru-RU',{timeZone:r.period.tz,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+   lines.push(`#${item.shiftId} ${item.name}: ${item.status==='early'?'раньше':'позже'} на ${Math.abs(item.differenceMinutes)} мин; план ${when(item.plannedEndAt)}, факт ${when(item.endedAt)}. Причина: ${item.closeComment||'⚠️ не указана'}`);
+  }
+ }
  lines.push('',`Всего: ${rubles(r.totals.grossKopeks)}; незакрытых смен: ${r.totals.unclosed}`,
   'Без НДФЛ, других удержаний, коэффициентов и юридического расчёта зарплаты. Требуется проверка бухгалтером.');
  return lines.join('\n');

@@ -97,6 +97,16 @@ async function showScan(token){
 async function showCamera(intent){
  const panel=element('section',{className:'panel'},element('h2',{},'Селфи для отметки'),
   element('p',{},`${intent.employee} · ${intent.location}. Сделайте фотографию в форме, чтобы она попала в рабочую группу.`));
+ let reason=null;
+ if(intent.action==='out'){
+  const review=intent.closeReview;
+  if(review?.required){
+   const minutes=Math.abs(review.differenceMinutes);
+   panel.append(element('p',{className:'error'},`Окончание смены ${review.status==='early'?'раньше':'позже'} графика примерно на ${minutes} мин. Укажите причину до отправки фото.`));
+  }
+  reason=element('textarea',{placeholder:review?.required?'Причина раннего или позднего ухода (обязательно)':'Комментарий к закрытию (необязательно)',maxlength:500,rows:3});
+  panel.append(reason);
+ }
  const video=element('video',{autoplay:'',playsinline:'',muted:'',className:'selfie-video'});
  video.muted=true;video.setAttribute('playsinline','');
  const take=element('button',{disabled:true},'Сфотографировать');
@@ -113,6 +123,7 @@ async function showCamera(intent){
  window.addEventListener('pagehide',end,{once:true});
  take.addEventListener('click',async()=>{
   if(captured)return;
+  if(intent.closeReview?.required && (!reason || reason.value.trim().length<5)){result.textContent='Укажите причину отклонения от графика (не менее 5 символов).';return;}
   if(video.videoWidth<1||video.videoHeight<1){result.textContent='Видеопоток не готов. Повторите.';return;}
   const canvas=document.createElement('canvas');
   const ratio=Math.min(1,900/video.videoWidth,900/video.videoHeight);
@@ -125,10 +136,10 @@ async function showCamera(intent){
   const send=async()=>{
    submit.disabled=true;result.textContent='Отправляем фотографию в Telegram и проверяем отметку…';
    try{
-    const r=await call('completePhotoShift',{intentId:intent.intentId,selfieBase64:captured});
+    const r=await call('completePhotoShift',{intentId:intent.intentId,selfieBase64:captured,closeComment:reason?.value||''});
     render(element('section',{className:'panel'},element('h2',{},'✅ Отметка зарегистрирована'),
      element('p',{},`${intent.employee}: ${r.action==='in'?'начало':'окончание'} смены #${r.shiftId}`),
-     element('p',{},'Селфи отправлено в Telegram-группу рабочей точки.')));
+     element('p',{},'Селфи отправлено в Telegram-группу рабочей точки. Комментарий к уходу доступен владельцу в отчёте.')));
    }catch(e){result.textContent='Не удалось закончить отметку: '+e.message+' Попробуйте отправить ещё раз, не делая нового снимка.';submit.disabled=false;}
   };
   const submit=take.cloneNode(true);
@@ -157,6 +168,10 @@ function renderReport(r){
  const box=element('section',{className:'panel'},element('h1',{},'Предварительное начисление'),
   element('p',{},`${r.period.start} — ${r.period.endExclusive} (исключая дату окончания)`));
  for(const e of r.entries)box.append(element('p',{},`${e.name}: ${e.hours} ч, ${(e.grossKopeks/100).toFixed(2)} ₽${e.unclosed?' ⚠️ '+e.unclosed+' незакрытых':''}`));
+ if(r.exceptions?.length){
+  box.append(element('h2',{},`Отклонения от графика: ${r.exceptions.length}`));
+  for(const item of r.exceptions)box.append(element('p',{},`${item.name}: ${item.status==='early'?'раньше':'позже'} на ${Math.abs(item.differenceMinutes)} мин. Причина: ${item.closeComment||'не указана'}`));
+ }
  box.append(element('strong',{},`Итого: ${(r.totals.grossKopeks/100).toFixed(2)} ₽`),
   element('p',{className:'muted'},'Без удержаний и обязательных доплат. Требуется проверка.'),
   element('button',{onclick:renderHome},'Назад'));render(box);

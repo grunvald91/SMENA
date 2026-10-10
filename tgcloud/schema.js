@@ -5,7 +5,8 @@ export const organizations=table('organizations',{
 });
 export const locations=table('locations',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),
- name:text('name').notNull(),chatId:integer('chat_id').unique()
+ name:text('name').notNull(),chatId:integer('chat_id').unique(),
+ plannedStartTime:text('planned_start_time'),plannedEndTime:text('planned_end_time'),closeGraceMinutes:integer('close_grace_minutes').notNull().default(5)
 },t=>({org:index('idx_locations_org').on(t.orgId)}));
 export const employees=table('employees',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),tgId:integer('tg_id').notNull(),
@@ -28,7 +29,8 @@ export const shifts=table('shifts',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
  employeeId:integer('employee_id').notNull(),startedAt:integer('started_at').notNull(),endedAt:integer('ended_at'),
  hourlyKopeksSnapshot:integer('hourly_kopeks_snapshot').notNull(),shiftBonusKopeksSnapshot:integer('shift_bonus_kopeks_snapshot').notNull().default(0),
- sourceIn:text('source_in').notNull(),sourceOut:text('source_out'),createdAt:integer('created_at').notNull()
+ sourceIn:text('source_in').notNull(),sourceOut:text('source_out'),createdAt:integer('created_at').notNull(),
+ plannedEndAt:integer('planned_end_at'),closeGraceMinutes:integer('close_grace_minutes'),closeComment:text('close_comment')
 },t=>({employee:index('idx_shifts_employee_start').on(t.employeeId,t.startedAt),
  open:uniqueIndex('uq_employee_open_shift').on(t.employeeId).where(sql`ended_at IS NULL`)}));
 export const shiftEvents=table('shift_events',{
@@ -53,5 +55,6 @@ export const photoIntents=table('photo_intents',{
  employeeId:integer('employee_id').notNull(),actorTgId:integer('actor_tg_id').notNull(),
  action:text('action').notNull(),createdAt:integer('created_at').notNull(),
  expiresAt:integer('expires_at').notNull(),status:text('status').notNull().default('pending'),
- photoFileId:text('photo_file_id'),photoMessageId:integer('photo_message_id'),shiftId:integer('shift_id')
+ photoFileId:text('photo_file_id'),photoMessageId:integer('photo_message_id'),shiftId:integer('shift_id'),
+ closeComment:text('close_comment')
 },t=>({employee:index('idx_photo_intent_actor').on(t.actorTgId,t.createdAt)}));

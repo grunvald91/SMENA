@@ -28,3 +28,11 @@ Telegram commands, Mini App endpoints and future AI tools call **the same domain
 - Prevent duplicate inserts via idempotency keys and unique indexes. QR scan concurrency is protected by unique open-shift index / compare-and-set on close.
 - Capture request provenance, actor, action, timestamp, before/after for impactful writes.
 - Limit lists and add pagination for large organizations before integrating mass AI operations.
+
+## Planned shift end and closing notes
+
+- `locations.set_hours` → `setLocationHours(actorId,locationId,startTime,endTime,graceMinutes)`: owner only. Validates 24-hour HH:MM times and a 0–180-minute allowance. No AI agent may set or change a schedule without owner authorization.
+- The planned end is **snapshotted at shift opening** into `shifts.planned_end_at` and the grace period into `shifts.close_grace_minutes`; changing point hours doesn't silently rewrite open/historical shifts.
+- `shifts.close` through QR → photo intent → selfie **requires a human-entered reason** (5–500 characters) when the departure timestamp is outside the saved grace window. `completePhotoShift` checks it before sending an image to Telegram and the shift domain rechecks it before closing.
+- `shifts.close_comment` and `shift_events.note` record the explanation. Future agent reports can read these via the owner-authenticated `reports.preview` result in `exceptions`; don't expose them in public group chats or to unrelated employees.
+- If no schedule is configured on the point, deviations cannot be computed and the system must not invent a planned end. Require an owner to configure `/hours` for meaningful control.
