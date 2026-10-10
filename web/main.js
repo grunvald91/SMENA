@@ -123,18 +123,18 @@ async function showCamera(intent){
   stop();video.replaceWith(element('img',{src:canvas.toDataURL('image/jpeg',0.75),className:'selfie-video',alt:'Только что сделанное фото'}));
   take.textContent='Отправить фото и отметить смену';
   const send=async()=>{
-   take.disabled=true;result.textContent='Отправляем фотографию в Telegram и проверяем отметку…';
+   submit.disabled=true;result.textContent='Отправляем фотографию в Telegram и проверяем отметку…';
    try{
     const r=await call('completePhotoShift',{intentId:intent.intentId,selfieBase64:captured});
     render(element('section',{className:'panel'},element('h2',{},'✅ Отметка зарегистрирована'),
      element('p',{},`${intent.employee}: ${r.action==='in'?'начало':'окончание'} смены #${r.shiftId}`),
      element('p',{},'Селфи отправлено в Telegram-группу рабочей точки.')));
-   }catch(e){result.textContent='Не удалось закончить отметку: '+e.message+' Попробуйте отправить ещё раз, не делая нового снимка.';take.disabled=false;}
+   }catch(e){result.textContent='Не удалось закончить отметку: '+e.message+' Попробуйте отправить ещё раз, не делая нового снимка.';submit.disabled=false;}
   };
   const submit=take.cloneNode(true);
-  take.replaceWith(submit);submit.textContent='Отправить фото и отметить смену';submit.disabled=false;
+  take.replaceWith(submit);submit.textContent='Повторить отправку';submit.disabled=true;
   submit.addEventListener('click',send);
-  result.textContent='Проверьте фотографию и подтвердите отправку.';
+  await send(); // one shutter press: photo is sent automatically; button is only for failed retries
  },{once:true});
 }
 function renderHome(){
