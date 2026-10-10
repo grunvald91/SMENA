@@ -1,6 +1,6 @@
 import { api } from 'sdk';
 import { DomainError } from '../lib/errors.js';
-import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,setLocationHours } from '../lib/service.js';
+import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,setLocationHours,createShiftTemplate,assignShift } from '../lib/service.js';
 import { rubles } from '../lib/payroll.js';
 function money(input){
  if(!/^\d{1,7}(?:[.,]\d{1,2})?$/.test(input||'')) throw new DomainError('BAD_MONEY','Сумма: 250 или 250.50');
@@ -18,7 +18,9 @@ const HELP=['ServGo Смена — учёт рабочих смен через Q
 '/bonus TG_ID 1500 Причина — разовая надбавка на сегодня',
 '/shiftbonus TG_ID 200 — автоматическая надбавка за закрытую смену',
 '/team — сотрудники; /locations — рабочие точки',
-'/hours ТОЧКА 09:00 18:00 [5] — график точки и допуск в минутах',
+'/hours ТОЧКА 09:00 18:00 [5] — устаревший график точки (если нет типов смен)',
+'/shiftadd ТОЧКА Утренняя 09:00 15:00 [5] — создать тип смены',
+'/shiftassign ID_сотрудника ID_смены YYYY-MM-DD — назначить сотрудника (ID из веб-кабинета)',
 '/report — с начала месяца по вчера',
 '/report 2026-09 — за месяц; /report 2026-10-01 2026-10-09 — даты включительно',
 '/problems — незакрытые смены до сегодняшнего дня','',
@@ -49,7 +51,7 @@ export default async function(message){
    await reply(chat,`✅ Точка «${loc.name}» привязана. ID: ${loc.id}. QR-устройство регистрируется владельцем в Mini App.`);return;
   }
   if(!privateChat){
-   if(['report','problems','team','locations','setup','employee','rate','bonus','shiftbonus','hours'].includes(cmd.cmd)){
+   if(['report','problems','team','locations','setup','employee','rate','bonus','shiftbonus','hours','shiftadd','shiftassign'].includes(cmd.cmd)){
     await reply(chat,'Для безопасности зарплатные сведения и настройки доступны только в личном чате с ботом.');
    }
    return;
@@ -84,8 +86,19 @@ export default async function(message){
    const data=await setLocationHours(tgId,Number(m[1]),m[2],m[3],m[4]===undefined?5:Number(m[4]));
    await reply(chat,`✅ Точка №${data.locationId}: график ${data.startTime}–${data.endTime}, допуск ${data.graceMinutes} мин. При уходе вне допуска сотрудник обязан написать причину. Изменения применяются к новым сменам.`);return;
   }
+  if(cmd.cmd==='shiftadd'){
+   const m=/^(\d+)\s+(.+?)\s+([0-2]\d:[0-5]\d)\s+([0-2]\d:[0-5]\d)(?:\s+(\d{1,3}))?$/u.exec(cmd.args);
+   if(!m)throw new DomainError('BAD_COMMAND','Пример: /shiftadd 1 Утренняя 09:00 15:00 5');
+   const t=await createShiftTemplate(tgId,Number(m[1]),m[2],m[3],m[4],m[5]===undefined?5:Number(m[5]));
+   await reply(chat,`✅ Тип смены «${t.name}» создан (ID ${t.id}). Назначьте сотрудника командой /shiftassign.`);return;
+  }
+  if(cmd.cmd==='shiftassign'){
+   const m=/^(\d+)\s+(\d+)\s+(\d{4}-\d{2}-\d{2})$/u.exec(cmd.args);
+   if(!m)throw new DomainError('BAD_COMMAND','Пример: /shiftassign 2 1 2026-10-12 (внутренний ID сотрудника, ID смены, дата)');
+   const a=await assignShift(tgId,Number(m[1]),Number(m[2]),m[3]);await reply(chat,`✅ Назначение #${a.id} на ${a.workDate} сохранено.`);return;
+  }
   if(cmd.cmd==='team'){
-   const team=await listEmployees(tgId);await reply(chat,team.length?team.map(x=>`${x.name}: ID ${x.tgId}, ${rubles(x.hourlyKopeks)}/ч, за смену ${rubles(x.shiftBonusKopeks||0)}`).join('\n'):'Сотрудников пока нет.');return;
+   const team=await listEmployees(tgId);await reply(chat,team.length?team.map(x=>`${x.name}: ID ${x.id}, Telegram ${x.tgId}, ${rubles(x.hourlyKopeks)}/ч, за смену ${rubles(x.shiftBonusKopeks||0)}`).join('\n'):'Сотрудников пока нет.');return;
   }
   if(cmd.cmd==='locations'){
    const places=await listLocations(tgId);await reply(chat,places.length?places.map(x=>`${x.name}: точка №${x.id}, чат ${x.chatId}, график ${x.plannedStartTime&&x.plannedEndTime?x.plannedStartTime+'–'+x.plannedEndTime+', допуск '+x.closeGraceMinutes+' мин':'не задан'}`).join('\n'):'Рабочих точек пока нет.');return;

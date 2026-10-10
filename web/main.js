@@ -96,7 +96,7 @@ async function showScan(token){
 }
 async function showCamera(intent){
  const panel=element('section',{className:'panel'},element('h2',{},'Селфи для отметки'),
-  element('p',{},`${intent.employee} · ${intent.location}. Сделайте фотографию в форме, чтобы она попала в рабочую группу.`));
+  element('p',{},`${intent.employee} · ${intent.location}${intent.templateName?' · '+intent.templateName:''}. Сделайте фотографию в форме, чтобы она попала в рабочую группу.`));
  let reason=null;
  if(intent.action==='out'){
   const review=intent.closeReview;
@@ -148,6 +148,134 @@ async function showCamera(intent){
   await send(); // one shutter press: photo is sent automatically; button is only for failed retries
  },{once:true});
 }
+// Owner-only data is served by authenticated Telegram Serverless endpoints.
+const currency=kopeks=>(Number(kopeks||0)/100).toLocaleString('ru-RU',{style:'currency',currency:'RUB'});
+const dateOnly=seconds=>new Date(seconds*1000).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+function ui(tag,props={},...children){return element(tag,props,...children);}
+function textField(label,type='text',value=''){
+ const input=ui('input',{type,value});return {input,field:ui('label',{className:'field'},ui('span',{},label),input)};
+}
+function lookup(items,id){return items.find(x=>x.id===id);}
+function table(headers,rows){
+ const th=ui('thead',{},ui('tr',{},...headers.map(x=>ui('th',{},x))));
+ const tb=ui('tbody',{},...rows.map(row=>ui('tr',{},...row.map(v=>ui('td',{},v??'—')))));
+ return ui('div',{className:'table-scroll'},ui('table',{},th,tb));
+}
+let dashboard={period:new Date().toISOString().slice(0,7),data:null,active:'overview'};
+function refreshDashboard(){return call('ownerDashboard',{args:[dashboard.period]}).then(d=>{dashboard.data=d;renderDashboard();});}
+function navButton(id,title){return ui('button',{className:'tab '+(dashboard.active===id?'active':''),onclick:()=>{dashboard.active=id;renderDashboard();}},title);}
+function sectionTitle(title,description=''){return ui('div',{className:'section-intro'},ui('h2',{},title),description?ui('p',{className:'muted'},description):null);}
+function statisticsCard(title,value,detail=''){return ui('div',{className:'stat'},ui('span',{className:'muted'},title),ui('strong',{},value),detail?ui('small',{},detail):null);}
+function dashboardOverviewPanel(d){
+ const rows=d.preview.entries;
+ const cards=ui('div',{className:'stats-grid'},
+   statisticsCard('Отработано',d.summary.workedHours+' ч'),
+   statisticsCard('Начисления',currency(d.summary.grossKopeks),'До удержаний'),
+   statisticsCard('Смен по графику',d.summary.scheduled),
+   statisticsCard('Требуют проверки',d.summary.missing+d.summary.unclosed+d.summary.deviations));
+ const warnings=[];
+ if(d.summary.missing)warnings.push(`${d.summary.missing} назначенных смен без отметок`);
+ if(d.summary.unclosed)warnings.push(`${d.summary.unclosed} незакрытых смен`);
+ if(d.summary.deviations)warnings.push(`${d.summary.deviations} уходов вне графика`);
+ return ui('div',{className:'dashboard-stack'},
+  sectionTitle('Обзор','Фактические данные за выбранный месяц.'),cards,
+  warnings.length?ui('div',{className:'notice warning'},'Внимание: '+warnings.join(' · ')):ui('div',{className:'notice'},'Нет обнаруженных отклонений в выбранном периоде.'),
+  ui('section',{className:'panel'},sectionTitle('Предварительные начисления'),
+   rows.length?table(['Сотрудник','Часы','Начислено','Незакрыто'],rows.map(e=>[e.name,e.hours,currency(e.grossKopeks),e.unclosed||'—'])):ui('p',{className:'muted'},'Сотрудников пока нет.')));
+}
+function makeSelect(label,items,placeholder='Выберите'){
+ const el=ui('select',{},ui('option',{value:''},placeholder),...items.map(x=>ui('option',{value:x.id},x.label||x.name)));
+ return {select:el,field:ui('label',{className:'field'},ui('span',{},label),el)};
+}
+function dashboardSchedulePanel(d){
+ const locations=d.locations.map(x=>({id:x.id,name:x.name}));
+ const loc=makeSelect('Рабочая точка',locations);
+ const name=textField('Название смены (например, Утренняя)');
+ const start=textField('Начало','time','09:00'),end=textField('Окончание','time','15:00'),grace=textField('Допуск, минут','number','5');
+ const creation=ui('form',{className:'form-grid'},loc.field,name.field,start.field,end.field,grace.field,
+  ui('button',{type:'submit'},'Создать тип смены'));
+ creation.addEventListener('submit',async e=>{e.preventDefault();try{
+  await call('ownerCreateTemplate',{locationId:Number(loc.select.value),name:name.input.value,startTime:start.input.value,endTime:end.input.value,graceMinutes:Number(grace.input.value)});
+  msg('Тип смены сохранён');await refreshDashboard();
+ }catch(err){msg(err.message,true);}});
+ const eSelect=makeSelect('Сотрудник',d.employees.map(x=>({id:x.id,name:x.name})));
+ const tSelect=makeSelect('Тип смены',d.templates.filter(t=>t.active).map(t=>({id:t.id,name:`${t.name} · ${t.startTime}–${t.endTime} (точка ${t.locationId})`})));
+ const day=textField('Дата','date',new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+'-'+String(new Date().getDate()).padStart(2,'0'));
+ const assignment=ui('form',{className:'form-grid'},eSelect.field,tSelect.field,day.field,
+  ui('button',{type:'submit'},'Назначить сотрудника'));
+ assignment.addEventListener('submit',async e=>{e.preventDefault();try{
+  await call('ownerAssignShift',{employeeId:Number(eSelect.select.value),templateId:Number(tSelect.select.value),workDate:day.input.value});
+  msg('Смена назначена');await refreshDashboard();
+ }catch(err){msg(err.message,true);}});
+ const templatesTable=table(['Точка','Смена','Время','Допуск'],d.templates.map(t=>[lookup(d.locations,t.locationId)?.name||t.locationId,t.name,`${t.startTime}–${t.endTime}`,`${t.graceMinutes} мин`]));
+ const rosterTable=table(['Дата','Сотрудник','Смена','Состояние'],d.assignments.map(a=>[
+  a.workDate,lookup(d.employees,a.employeeId)?.name||a.employeeId,a.templateName,
+  a.status==='completed'?'Завершена':a.status==='open'?'Открыта':a.status==='missing'?'Нет отметки':'По графику'
+ ]));
+ return ui('div',{className:'dashboard-stack'},sectionTitle('График сотрудников','Утренняя и вечерняя смены настраиваются отдельно; назначения сохраняются по датам.'),
+  ui('div',{className:'columns'},ui('section',{className:'panel'},ui('h3',{},'Добавить тип смены'),creation),ui('section',{className:'panel'},ui('h3',{},'Назначить смену'),assignment)),
+  ui('section',{className:'panel'},ui('h3',{},'Типы смен'),templatesTable),
+  ui('section',{className:'panel'},ui('h3',{},'Назначения за месяц'),rosterTable));
+}
+function dashboardAnalyticsPanel(d){
+ const shifts=d.shifts.filter(x=>x.endedAt!=null).sort((a,b)=>b.startedAt-a.startedAt);
+ const totalByDay=new Map();
+ for(const s of shifts){const date=new Date(s.startedAt*1000).toLocaleDateString('sv-SE',{timeZone:d.organization.timezone});
+  totalByDay.set(date,(totalByDay.get(date)||0)+Math.max(0,s.endedAt-s.startedAt)/3600);}
+ const chart=ui('div',{className:'bar-chart'},...Array.from(totalByDay).sort(([a],[b])=>a.localeCompare(b)).map(([day,hours])=>
+  ui('div',{className:'bar-row'},ui('span',{},day.slice(5)),ui('div',{className:'bar-track'},
+    ui('div',{className:'bar-fill',style:`width:${Math.max(2,Math.min(100,hours/24*100))}%`})),ui('strong',{},hours.toFixed(1)+' ч'))));
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Аналитика смен','Часы по датам, отклонения и проверка незакрытых смен.'),
+  ui('section',{className:'panel'},ui('h3',{},'Отработанные часы по дням'),totalByDay.size?chart:ui('p',{className:'muted'},'Завершённых смен пока нет.')),
+  ui('section',{className:'panel'},ui('h3',{},'Отклонения'),
+   d.preview.exceptions.length?table(['Сотрудник','Отклонение','Причина'],d.preview.exceptions.map(x=>[
+    x.name,(x.differenceMinutes<0?'Раньше ':'Позже ')+Math.abs(x.differenceMinutes)+' мин',x.closeComment||'Не указана'
+   ])):ui('p',{className:'muted'},'Отклонений за период не обнаружено.')),
+  ui('section',{className:'panel'},ui('h3',{},'История смен'),
+   table(['Сотрудник','Начало','Конец','Длительность'],shifts.slice(0,100).map(s=>[
+    lookup(d.employees,s.employeeId)?.name||s.employeeId,dateOnly(s.startedAt),dateOnly(s.endedAt),((s.endedAt-s.startedAt)/3600).toFixed(2)+' ч'
+   ]))));
+}
+function downloadReportCsv(d){
+ const rows=[['Сотрудник','Часы','Начислено, ₽','Незакрыто'],...d.preview.entries.map(e=>[e.name,e.hours,(e.grossKopeks/100).toFixed(2),e.unclosed])];
+ const csv='\uFEFF'+rows.map(row=>row.map(x=>'"'+String(x??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download=`servgo-smena-${dashboard.period}.csv`;a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+function dashboardReportsPanel(d){
+ const csvBtn=ui('button',{onclick:()=>downloadReportCsv(d)},'Выгрузить CSV');
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Месячный отчёт','Владелец вызывает расчёт за выбранный месяц без планировщика.'),
+  ui('section',{className:'panel'},ui('div',{className:'panel-head'},ui('h3',{},'Предварительный расчёт'),csvBtn),
+   table(['Сотрудник','Часы','Начисление','Незакрыто'],d.preview.entries.map(e=>[e.name,e.hours,currency(e.grossKopeks),e.unclosed])),
+   ui('div',{className:'report-total'},'Всего начислено: ',ui('strong',{},currency(d.preview.totals.grossKopeks))),
+   ui('p',{className:'muted'},'Это предварительные начисления: без НДФЛ, обязательных доплат и удержаний. Требуется проверка.')),
+  ui('section',{className:'panel'},ui('h3',{},'Смены без отметки'),
+    d.assignments.some(a=>a.status==='missing')?table(['Дата','Сотрудник','Смена'],d.assignments.filter(a=>a.status==='missing').map(a=>[a.workDate,lookup(d.employees,a.employeeId)?.name,a.templateName])):
+     ui('p',{className:'muted'},'Пропущенных назначенных смен за период не обнаружено.')));
+}
+function dashboardSettingsPanel(d){
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Настройки','Организации и рабочие группы, привязанные к Telegram.'),
+  ui('section',{className:'panel'},ui('h3',{},d.organization.name),ui('p',{className:'muted'},`Часовой пояс: ${d.organization.timezone}`),
+   table(['Точка','Telegram-группа','График точки (старый режим)'],d.locations.map(l=>[l.name,l.chatId||'Нет привязки',l.plannedStartTime?`${l.plannedStartTime}–${l.plannedEndTime}`:'—']))),
+  ui('section',{className:'panel'},ui('h3',{},'Безопасность'),
+   ui('p',{},'Селфи отправляются в Telegram-группу привязанной точки. Зарплатные отчёты доступны только владельцу.'),
+   ui('p',{},'Смена устройства QR подтверждается криптографическим ключом; не храните пароли или ключи в общем доступе.')));
+}
+function renderDashboard(){
+ const d=dashboard.data;if(!d)return;
+ const period=ui('input',{type:'month',value:dashboard.period});period.value=dashboard.period;
+ period.addEventListener('change',()=>{dashboard.period=period.value;refreshDashboard().catch(e=>msg(e.message,true));});
+ const header=ui('header',{className:'dashboard-header'},ui('div',{},ui('span',{className:'eyebrow'},'ServGo / управление персоналом'),
+  ui('h1',{},'Смена'),ui('p',{className:'muted'},d.organization.name)),
+  ui('div',{className:'header-actions'},period,ui('button',{className:'outline',onclick:renderHome},'QR-устройство')));
+ const nav=ui('nav',{className:'dashboard-nav'},...[
+  ['overview','Обзор'],['schedule','График'],['analytics','Аналитика'],['reports','Отчёты'],['settings','Настройки']
+ ].map(([id,title])=>navButton(id,title)));
+ const current=dashboard.active==='overview'?dashboardOverviewPanel(d):dashboard.active==='schedule'?dashboardSchedulePanel(d):
+  dashboard.active==='analytics'?dashboardAnalyticsPanel(d):dashboard.active==='reports'?dashboardReportsPanel(d):dashboardSettingsPanel(d);
+ render(ui('div',{className:'dashboard'},header,nav,current));
+}
 function renderHome(){
  const owner=state.context?.owner;
  const box=element('section',{className:'panel'},element('h1',{},'ServGo Смена'),
@@ -158,9 +286,7 @@ function renderHome(){
     element('p',{className:'muted'},'Только одно устройство на точку. Для замены нужен отзыв с подписанным ключом старого устройства.'),
     element('button',{onclick:async()=>{try{await enroll(Number(choices.value));}catch(e){msg(e.message,true);}}},'Зарегистрировать это устройство'));
   if(state.device){box.append(element('button',{className:'outline',onclick:()=>displayKiosk().catch(e=>msg(e.message,true))},'Показать QR этого устройства'));}
-  box.append(element('button',{className:'outline',onclick:async()=>{
-    try{const report=await call('ownerReport',{});renderReport(report);}catch(e){msg(e.message,true);}
-  }},'Отчёт за предыдущие дни'));
+  box.append(element('button',{onclick:async()=>{try{await refreshDashboard();}catch(e){msg(e.message,true);}}},'Кабинет руководителя: график и отчёты'));
  }
  render(box);
 }
@@ -178,7 +304,7 @@ function renderReport(r){
 }
 (async()=>{
  try{
-  if(!T)throw new Error('Откройте Mini App через Telegram.');T.ready();T.expand();
+  if(!T?.Serverless?.call){render(ui('section',{className:'public-page'},ui('span',{className:'eyebrow'},'ServGo · управление сотрудниками'),ui('h1',{},'ServGo Смена'),ui('p',{},'Графики, QR-отметки с селфи, табель и месячные отчёты в одном кабинете.'),ui('h2',{},'Доступ владельца'),ui('p',{},'Для доступа к реальным данным откройте Mini App вашего бота ServGo Смена в Telegram. Обычная ссылка не предоставляет доступ к зарплатам и персональным данным.'),ui('p',{className:'muted'},'Этот адрес станет веб-кабинетом после внедрения отдельной серверной авторизации.')));return;}T.ready();T.expand();
   state.context=await call('getContext',{});
   try{state.device=JSON.parse(localStorage.getItem('servgo-kiosk-device')||'null');}catch{state.device=null;}
   const token=state.context.scanToken || new URLSearchParams(location.search).get('scan');

@@ -1,12 +1,14 @@
 import { db, api, InputFile } from 'sdk';
 import { eq,and,or,lt,lte,gt,gte,isNull,desc } from 'sdk/db';
-import { organizations,locations,employees,devices,deviceChallenges,qrPasses,shifts,shiftEvents,bonuses,auditLog,photoIntents } from '../schema.js';
+import { organizations,locations,employees,devices,deviceChallenges,qrPasses,shifts,shiftEvents,bonuses,auditLog,photoIntents,shiftTemplates,shiftAssignments } from '../schema.js';
 import { requireInput,DomainError } from './errors.js';
 import { nonce, pairingMessage,verifyDeviceSignature,requireCrypto,validateProofTime } from './security.js';
-import { reportPeriod,formatDate,startOfLocalDay } from './time.js';
+import { reportPeriod,formatDate,startOfLocalDay,addDays } from './time.js';
 import { computePreview,rubles } from './payroll.js';
 import { decodeSelfie } from './photo.js';
 import { minuteOfDay,validateGrace,plannedEndForStart,closingReview,validateCloseComment } from './schedule.js';
+import { validateTemplate,templateWindow,chooseAssignment,daysAround } from './roster.js';
+import { parseISODate } from './time.js';
 const now=()=>Math.floor(Date.now()/1000);
 const validId=x=>Number.isSafeInteger(Number(x))&&Number(x)>0;
 async function audit(orgId,tgId,action,refId,data={}) {
@@ -79,6 +81,63 @@ export async function setLocationHours(tgId,locationId,startTime,endTime,graceMi
  await db.update(locations).set({plannedStartTime:startTime,plannedEndTime:endTime,closeGraceMinutes:graceMinutes}).where(eq(locations.id,loc.id)).run();
  await audit(org.id,tgId,'location.hours_changed',loc.id,{before:{start:loc.plannedStartTime,end:loc.plannedEndTime,grace:loc.closeGraceMinutes},after:{start:startTime,end:endTime,grace:graceMinutes}});
  return {locationId:loc.id,startTime,endTime,graceMinutes};
+}
+export async function createShiftTemplate(tgId,locationId,name,startTime,endTime,graceMinutes=5){
+ const org=await requireOwner(tgId);
+ const loc=await db.select().from(locations).where(and(eq(locations.id,Number(locationId)),eq(locations.orgId,org.id))).get();
+ requireInput(!!loc,'NOT_FOUND','Точка не найдена');
+ const values=validateTemplate(name,startTime,endTime,graceMinutes);
+ const existing=await db.select().from(shiftTemplates).where(and(eq(shiftTemplates.locationId,loc.id),eq(shiftTemplates.active,1))).all();
+ requireInput(!existing.some(t=>t.name.toLocaleLowerCase('ru')===values.name.toLocaleLowerCase('ru')),'ALREADY_EXISTS','Такая смена уже есть на точке');
+ const [result]=await db.insert(shiftTemplates).values({...values,orgId:org.id,locationId:loc.id,active:1}).returning().run();
+ await audit(org.id,tgId,'shift_template.created',result.id,values);
+ return result;
+}
+export async function assignShift(tgId,employeeId,templateId,workDate){
+ const org=await requireOwner(tgId);parseISODate(workDate);
+ const person=await db.select().from(employees).where(and(eq(employees.id,Number(employeeId)),eq(employees.orgId,org.id),eq(employees.active,1))).get();
+ requireInput(!!person,'NOT_FOUND','Сотрудник не найден');
+ const template=await db.select().from(shiftTemplates).where(and(eq(shiftTemplates.id,Number(templateId)),eq(shiftTemplates.orgId,org.id),eq(shiftTemplates.active,1))).get();
+ requireInput(!!template,'NOT_FOUND','Тип смены не найден');
+ const rows=await db.select().from(shiftAssignments).where(and(eq(shiftAssignments.employeeId,person.id),eq(shiftAssignments.workDate,workDate))).all();
+ requireInput(!rows.some(x=>x.templateId===template.id),'ALREADY_EXISTS','Эта смена уже назначена');
+ // Avoid overlapping assignments even across adjacent days (overnight shifts).
+ const prev=await db.select().from(shiftAssignments).where(and(eq(shiftAssignments.employeeId,person.id),eq(shiftAssignments.workDate,addDays(workDate,-1)))).all();
+ const next=await db.select().from(shiftAssignments).where(and(eq(shiftAssignments.employeeId,person.id),eq(shiftAssignments.workDate,addDays(workDate,1)))).all();
+ const all=[...rows,...prev,...next];
+ if(all.length){
+  const templates=await db.select().from(shiftTemplates).where(eq(shiftTemplates.orgId,org.id)).all();
+  const byId=new Map(templates.map(t=>[t.id,t]));
+  const interval=templateWindow(workDate,template,org.timezone);
+  for(const old of all){const current=byId.get(old.templateId);if(!current)continue;
+   const w=templateWindow(old.workDate,current,org.timezone);
+   requireInput(interval.endAt<=w.startAt || interval.startAt>=w.endAt,'SHIFT_OVERLAP','Смена пересекается с уже назначенной сменой сотрудника');
+  }
+ }
+ const [result]=await db.insert(shiftAssignments).values({orgId:org.id,locationId:template.locationId,employeeId:person.id,templateId:template.id,workDate,createdBy:tgId,createdAt:now()}).returning().run();
+ await audit(org.id,tgId,'shift_assignment.created',result.id,{employeeId:person.id,templateId:template.id,workDate});
+ return result;
+}
+export async function listRoster(tgId,startDate,endDate){
+ const org=await requireOwner(tgId);
+ parseISODate(startDate);parseISODate(endDate);
+ requireInput(startDate<=endDate,'BAD_DATE','Неверный диапазон');
+ const [templates,assignments]=await Promise.all([
+  db.select().from(shiftTemplates).where(eq(shiftTemplates.orgId,org.id)).all(),
+  db.select().from(shiftAssignments).where(and(eq(shiftAssignments.orgId,org.id),gte(shiftAssignments.workDate,startDate),lte(shiftAssignments.workDate,endDate))).all()
+ ]);
+ return {templates,assignments};
+}
+async function resolveShiftPlan(org,loc,person,scannedAt){
+ const templates=await db.select().from(shiftTemplates).where(and(eq(shiftTemplates.orgId,org.id),eq(shiftTemplates.locationId,loc.id),eq(shiftTemplates.active,1))).all();
+ if(!templates.length)return {plannedStartAt:null,plannedEndAt:plannedEndForStart(scannedAt,loc,org.timezone),
+  closeGraceMinutes:loc.closeGraceMinutes??5,assignmentId:null,templateId:null,templateName:null};
+ const dates=daysAround(scannedAt,org.timezone),assignments=[];
+ for(const date of dates){const rows=await db.select().from(shiftAssignments).where(and(eq(shiftAssignments.employeeId,person.id),eq(shiftAssignments.workDate,date),eq(shiftAssignments.locationId,loc.id))).all();assignments.push(...rows);}
+ const selected=chooseAssignment(scannedAt,org.timezone,assignments,templates);
+ requireInput(!!selected,'NO_ASSIGNED_SHIFT','На этот день вам не назначена смена на данной точке. Обратитесь к руководителю.');
+ return {plannedStartAt:selected.startAt,plannedEndAt:selected.endAt,closeGraceMinutes:selected.graceMinutes,
+  assignmentId:selected.assignmentId,templateId:selected.templateId,templateName:selected.templateName};
 }
 export async function listLocations(tgId) {
  const org=await requireOwner(tgId);
@@ -162,12 +221,12 @@ export async function scanShift(tgId,token,action,proof=null){
    const loc=await db.select().from(locations).where(and(eq(locations.id,qr.locationId),eq(locations.orgId,qr.orgId))).get();
    const org=await db.select().from(organizations).where(eq(organizations.id,qr.orgId)).get();
    requireInput(!!loc&&!!org,'BAD_LOCATION','Рабочая точка недоступна');
-   const plannedEndAt=plannedEndForStart(sec,loc,org.timezone);
+   const plan=await resolveShiftPlan(org,loc,person,sec);
    let record;
-   try {[record]=await db.insert(shifts).values({orgId:qr.orgId,locationId:qr.locationId,employeeId:person.id,startedAt:sec,sourceIn:token,hourlyKopeksSnapshot:person.hourlyKopeks,shiftBonusKopeksSnapshot:person.shiftBonusKopeks||0,createdAt:sec,plannedEndAt,closeGraceMinutes:loc.closeGraceMinutes??5}).returning().run();}
+   try {[record]=await db.insert(shifts).values({orgId:qr.orgId,locationId:qr.locationId,employeeId:person.id,startedAt:sec,sourceIn:token,hourlyKopeksSnapshot:person.hourlyKopeks,shiftBonusKopeksSnapshot:person.shiftBonusKopeks||0,createdAt:sec,plannedStartAt:plan.plannedStartAt,plannedEndAt:plan.plannedEndAt,closeGraceMinutes:plan.closeGraceMinutes,templateId:plan.templateId,assignmentId:plan.assignmentId}).returning().run();}
    catch {throw new DomainError('SHIFT_ALREADY_OPEN','Не удалось начать смену: возможно, она уже открыта');}
    await db.insert(shiftEvents).values({shiftId:record.id,actorTgId:tgId,action:'in',at:sec,qrToken:token,photoFileId:proof?.photoFileId||null}).run();
-   return {action,shiftId:record.id,at:sec,name:person.name};
+   return {action,shiftId:record.id,at:sec,name:person.name,templateName:plan.templateName};
  }
  requireInput(!!opened,'NO_OPEN_SHIFT','Нет открытой смены');
  requireInput(opened.locationId===qr.locationId,'WRONG_LOCATION','Смена начата на другой точке; требуется исправление владельца');
@@ -201,7 +260,12 @@ export async function beginPhotoShift(tgId,token,action){
   employeeId:person.id,actorTgId:tgId,action,createdAt:sec,expiresAt:sec+180,status:'pending'};
  await db.insert(photoIntents).values(intent).run();
  const closeReview=action==='out'?closingReview(sec,opened.plannedEndAt,opened.closeGraceMinutes??5):null;
- return {intentId:intent.id,expiresAt:intent.expiresAt,location:loc.name,employee:person.name,action,closeReview};
+ let templateName=null;
+ if(action==='in'){const org=await db.select().from(organizations).where(eq(organizations.id,qr.orgId)).get();
+  requireInput(!!org,'BAD_LOCATION','Организация не найдена');
+  const plan=await resolveShiftPlan(org,loc,person,sec);templateName=plan.templateName;}
+ else if(opened?.templateId){const template=await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,opened.templateId)).get();templateName=template?.name||null;}
+ return {intentId:intent.id,expiresAt:intent.expiresAt,location:loc.name,employee:person.name,action,closeReview,templateName};
 }
 
 export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment){
@@ -232,9 +296,11 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
    requireInput(!!loc?.chatId,'NO_WORK_CHAT','Не привязана рабочая группа');
    const person=await db.select().from(employees).where(and(eq(employees.id,intent.employeeId),eq(employees.tgId,tgId),eq(employees.active,1))).get();
    requireInput(!!person,'FORBIDDEN','Сотрудник не активен');
+   const shift=await db.select().from(shifts).where(and(eq(shifts.employeeId,person.id),isNull(shifts.endedAt))).get();
+   const template=intent.action==='out'&&shift?.templateId?await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,shift.templateId)).get():null;
    const photo=await api.sendPhoto({chat_id:loc.chatId,
     photo:new InputFile(bytes,'shift-selfie.jpg',{type:'image/jpeg'}),
-    caption:`📷 ServGo Смена · ${intent.action==='in'?'Приход':'Уход'}\n${person.name} · ${loc.name}\nФото-подтверждение; запись смены проверяется системой.`});
+    caption:`📷 ServGo Смена · ${intent.action==='in'?'Приход':'Уход'}\n${person.name} · ${loc.name}${template?' · '+template.name:''}\nФото-подтверждение; запись смены проверяется системой.`});
    const fileId=photo.photo?.at(-1)?.file_id;
    requireInput(!!fileId&&!!photo.message_id,'TELEGRAM_PHOTO','Telegram не вернул подтверждение фотографии');
    await db.update(photoIntents).set({status:'sent',photoFileId:fileId,photoMessageId:photo.message_id}).where(eq(photoIntents.id,intent.id)).run();
@@ -252,6 +318,41 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
  return {...result,photoMessageId:intent.photoMessageId};
 }
 
+/** Owner-only dashboard: never return this to group chat or employee. */
+export async function dashboardOverview(tgId,args=[],stamp=Date.now()){
+ const org=await requireOwner(tgId);
+ const period=reportPeriod(args,stamp,org.timezone);
+ const start=period.start,end=addDays(period.end,-1);
+ const [points,team,templates,roster,history,preview]=await Promise.all([
+  listLocations(tgId),listEmployees(tgId),
+  db.select().from(shiftTemplates).where(eq(shiftTemplates.orgId,org.id)).all(),
+  db.select().from(shiftAssignments).where(and(eq(shiftAssignments.orgId,org.id),gte(shiftAssignments.workDate,start),lte(shiftAssignments.workDate,end))).all(),
+  db.select().from(shifts).where(and(eq(shifts.orgId,org.id),lt(shifts.startedAt,Math.floor(period.endMs/1000)),
+    or(isNull(shifts.endedAt),gt(shifts.endedAt,Math.floor(period.startMs/1000))))).all(),
+  makeReport(tgId,args,stamp)
+ ]);
+ const byTemplate=new Map(templates.map(t=>[t.id,t]));
+ const attendance=[];
+ for(const a of roster){
+  const template=byTemplate.get(a.templateId);if(!template)continue;
+  const w=templateWindow(a.workDate,template,org.timezone);
+  const actual=history.find(s=>s.assignmentId===a.id);
+  const state=actual?actual.endedAt?'completed':'open':w.endAt*1000<stamp?'missing':'upcoming';
+  attendance.push({assignmentId:a.id,workDate:a.workDate,employeeId:a.employeeId,locationId:a.locationId,
+   templateId:a.templateId,templateName:template.name,plannedStartAt:w.startAt,plannedEndAt:w.endAt,
+   shiftId:actual?.id??null,actualStartAt:actual?.startedAt??null,actualEndAt:actual?.endedAt??null,
+   status:state,closeComment:actual?.closeComment??null});
+ }
+ attendance.sort((a,b)=>a.plannedStartAt-b.plannedStartAt||a.employeeId-b.employeeId);
+ return {organization:{id:org.id,name:org.name,timezone:org.timezone},period:preview.period,
+  locations:points,employees:team,templates,assignments:attendance,
+  shifts:history.map(s=>({id:s.id,employeeId:s.employeeId,locationId:s.locationId,templateId:s.templateId,
+   startedAt:s.startedAt,endedAt:s.endedAt,plannedStartAt:s.plannedStartAt,plannedEndAt:s.plannedEndAt,
+   closeComment:s.closeComment})),
+  preview,summary:{scheduled:attendance.length,missing:attendance.filter(x=>x.status==='missing').length,
+   completed:history.filter(s=>s.endedAt!=null).length,unclosed:history.filter(s=>s.endedAt==null).length,
+   deviations:preview.exceptions.length,workedHours:Number((preview.totals.seconds/3600).toFixed(2)),grossKopeks:preview.totals.grossKopeks}};
+}
 export async function makeReport(tgId,args=[],stamp=Date.now()){
  const org=await requireOwner(tgId), period=reportPeriod(args,stamp,org.timezone);
  const [people,records,extras]=await Promise.all([

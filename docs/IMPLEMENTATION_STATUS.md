@@ -21,3 +21,15 @@
 - [x] QR-to-camera photo intents and Telegram `sendPhoto` prototype implemented; gallery picker not provided.
 - [x] Photo decoder validation added; only `file_id` and message ID retained.
 - [ ] E2E Telegram sendPhoto, video permissions, group photo and endpoint payload limits still require live platform validation.
+
+
+## Этап: две смены и кабинет (10.10.2026)
+- [x] Точки поддерживают несколько типов смен (`shift_templates`).
+- [x] Назначения сотрудников по датам (`shift_assignments`), проверка пересечений и часового пояса.
+- [x] Снимок начала/окончания выбранной смены при QR-входе.
+- [x] Веб-кабинет Mini App: обзор, назначения, аналитика, ручной отчёт и CSV.
+- [x] Owner-only endpoints для шаблонов, назначений и сводок.
+- [x] Селфи направляются в группу конкретной рабочей точки.
+- [ ] Не проверено на живой базе и Telegram Serverless. Требуются dry-run миграции.
+- [ ] Отдельная веб-авторизация и публикация `smena.servgo.ru` не выполнены; домен не считать рабочим.
+- [ ] График массового заполнения дат/перемены назначений и безопасное исправление табеля — дальнейшие задачи.

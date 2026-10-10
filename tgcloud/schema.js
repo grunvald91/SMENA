@@ -12,6 +12,18 @@ export const employees=table('employees',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),tgId:integer('tg_id').notNull(),
  name:text('name').notNull(),hourlyKopeks:integer('hourly_kopeks').notNull().default(0),shiftBonusKopeks:integer('shift_bonus_kopeks').notNull().default(0),active:integer('active').notNull().default(1)
 },t=>({uniq:uniqueIndex('uq_employee_org_tg').on(t.orgId,t.tgId)}));
+// Named morning/evening/etc shifts per work location. The date is the START date for overnight shifts.
+export const shiftTemplates=table('shift_templates',{
+ id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
+ name:text('name').notNull(),startTime:text('start_time').notNull(),endTime:text('end_time').notNull(),
+ graceMinutes:integer('grace_minutes').notNull().default(5),active:integer('active').notNull().default(1)
+},t=>({location:index('idx_templates_location').on(t.locationId)}));
+export const shiftAssignments=table('shift_assignments',{
+ id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
+ employeeId:integer('employee_id').notNull(),templateId:integer('template_id').notNull(),workDate:text('work_date').notNull(),
+ createdBy:integer('created_by').notNull(),createdAt:integer('created_at').notNull()
+},t=>({day:index('idx_assignment_day').on(t.orgId,t.workDate),
+ employee:uniqueIndex('uq_assignment_employee_day_template').on(t.employeeId,t.workDate,t.templateId)}));
 export const devices=table('devices',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
  publicJwk:json('public_jwk').notNull(),registeredBy:integer('registered_by').notNull(),
@@ -30,7 +42,8 @@ export const shifts=table('shifts',{
  employeeId:integer('employee_id').notNull(),startedAt:integer('started_at').notNull(),endedAt:integer('ended_at'),
  hourlyKopeksSnapshot:integer('hourly_kopeks_snapshot').notNull(),shiftBonusKopeksSnapshot:integer('shift_bonus_kopeks_snapshot').notNull().default(0),
  sourceIn:text('source_in').notNull(),sourceOut:text('source_out'),createdAt:integer('created_at').notNull(),
- plannedEndAt:integer('planned_end_at'),closeGraceMinutes:integer('close_grace_minutes'),closeComment:text('close_comment')
+ plannedStartAt:integer('planned_start_at'),plannedEndAt:integer('planned_end_at'),closeGraceMinutes:integer('close_grace_minutes'),closeComment:text('close_comment'),
+ templateId:integer('template_id'),assignmentId:integer('assignment_id')
 },t=>({employee:index('idx_shifts_employee_start').on(t.employeeId,t.startedAt),
  open:uniqueIndex('uq_employee_open_shift').on(t.employeeId).where(sql`ended_at IS NULL`)}));
 export const shiftEvents=table('shift_events',{
