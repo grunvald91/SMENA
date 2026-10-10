@@ -11,7 +11,8 @@
     "deploy": "npm run build && tgcloud push",
     "status": "tgcloud status",
     "migrate:dry": "tgcloud migrate --dry-run",
-    "build:crypto": "node scripts/build_p256.mjs"
+    "build:crypto": "node scripts/build_p256.mjs",
+    "build:kiosk": "vite build --config vite.kiosk.config.js"
   },
   "devDependencies": {
     "@noble/curves": "2.4.0",

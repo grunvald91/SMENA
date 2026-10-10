@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import './style.css';
+import {isShiftToken} from '../tgcloud/lib/kiosk-token.js';
 const T=window.Telegram?.WebApp;
 const root=document.getElementById('root');
 const state={context:null,device:null,displayTimer:null,issuing:false};
@@ -83,7 +84,7 @@ async function displayKiosk(){
  await tick();
 }
 async function showScan(token){
- if(!/^[A-Za-z0-9_-]{32}$/.test(token||''))throw new Error('Некорректная ссылка QR');
+ if(!isShiftToken(token))throw new Error('Некорректная ссылка QR');
  const main=element('section',{className:'panel'},element('h2',{},'Отметка смены'),
   element('p',{},'QR действителен 30 секунд. Сначала выберите действие, затем сделайте живое селфи на фронтальную камеру. Загрузка из галереи не предусмотрена.'));
  for(const [label,action] of [['Я пришёл на работу','in'],['Я ухожу с работы','out']]){
@@ -139,7 +140,8 @@ async function showCamera(intent){
     const r=await call('completePhotoShift',{intentId:intent.intentId,selfieBase64:captured,closeComment:reason?.value||''});
     render(element('section',{className:'panel'},element('h2',{},'✅ Отметка зарегистрирована'),
      element('p',{},`${intent.employee}: ${r.action==='in'?'начало':'окончание'} смены #${r.shiftId}`),
-     element('p',{},'Селфи отправлено в Telegram-группу рабочей точки. Комментарий к уходу доступен владельцу в отчёте.')));
+     element('p',{},r.notificationDelivered?'Фото и время отметки подтверждены в рабочей группе.':'Смена сохранена и фото отправлено, но подпись сообщения не обновилась.'),
+     r.notificationDelivered?null:element('button',{onclick:async()=>{try{const retry=await call('completePhotoShift',{intentId:intent.intentId});if(retry.notificationDelivered){msg('Сообщение в группе подтверждено.');}else msg('Подпись пока не обновилась. Проверьте права бота.',true);}catch(e){msg(e.message,true);}}},'Обновить сообщение в группе')));
    }catch(e){result.textContent='Не удалось закончить отметку: '+e.message+' Попробуйте отправить ещё раз, не делая нового снимка.';submit.disabled=false;}
   };
   const submit=take.cloneNode(true);
@@ -320,6 +322,13 @@ function renderHome(){
     element('p',{className:'muted'},'Только одно устройство на точку. Для замены нужен отзыв с подписанным ключом старого устройства.'),
     element('button',{onclick:async()=>{try{await enroll(Number(choices.value));}catch(e){msg(e.message,true);}}},'Зарегистрировать это устройство'));
   if(state.device){box.append(element('button',{className:'outline',onclick:()=>displayKiosk().catch(e=>msg(e.message,true))},'Показать QR этого устройства'));}
+  const pairing=element('textarea',{rows:3,placeholder:'Код pk1_ с сайта smena.servgo.ru'});
+  const paired=element('p',{className:'notice'});
+  box.append(element('h2',{},'QR-экран на smena.servgo.ru'),element('p',{},'Откройте сайт на рабочем устройстве, создайте код регистрации и вставьте его сюда. Выберите рабочую точку выше.'),pairing,
+   element('button',{onclick:async()=>{try{const r=await call('enrollDevice',{locationId:Number(choices.value),pairingCode:pairing.value});paired.textContent=`Устройство зарегистрировано. Введите на рабочем экране ID: ${r.id}`;pairing.value='';}catch(e){msg(e.message,true);}}},'Привязать рабочий экран'),paired);
+  const revokeProof=element('textarea',{rows:3,placeholder:'Код kr1_ с рабочего экрана для отзыва'});
+  box.append(element('details',{},element('summary',{},'Отвязать внешний QR-экран'),element('p',{},'На рабочем экране нажмите «Отвязать устройство». Код отзыва действует 60 секунд.'),revokeProof,
+   element('button',{className:'outline',onclick:async()=>{try{await call('revokeKioskDevice',{proof:revokeProof.value.trim()});revokeProof.value='';msg('Рабочее устройство отозвано. Можно зарегистрировать замену.');}catch(e){msg(e.message,true);}}},'Подтвердить отзыв')));
   box.append(element('button',{onclick:async()=>{try{await refreshDashboard();}catch(e){msg(e.message,true);}}},'Кабинет руководителя: график и отчёты'));
  }
  render(box);

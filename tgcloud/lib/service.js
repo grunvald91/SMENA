@@ -9,6 +9,8 @@ import { decodeSelfie } from './photo.js';
 import { minuteOfDay,validateGrace,plannedEndForStart,closingReview,validateCloseComment } from './schedule.js';
 import { validateTemplate,templateWindow,chooseAssignment,daysAround } from './roster.js';
 import { parseISODate } from './time.js';
+import {isShiftToken,parseKioskToken,kioskMessage} from './kiosk-token.js';
+import {shiftPhotoCaption} from './shift-caption.js';
 const now=()=>Math.floor(Date.now()/1000);
 const validId=x=>Number.isSafeInteger(Number(x))&&Number(x)>0;
 async function audit(orgId,tgId,action,refId,data={}) {
@@ -222,10 +224,49 @@ export async function revokeDevice(tgId,deviceId,challengeId,signature){
  await audit(org.id,tgId,'device.revoked',dev.id,{locationId:dev.locationId});
  return {deviceId:dev.id,revoked:true};
 }
+export async function revokeKioskDevice(tgId,proof){
+ const org=await requireOwner(tgId),parsed=parseKioskToken(proof,now(),'revoke');
+ const dev=await db.select().from(devices).where(and(eq(devices.id,parsed.deviceId),eq(devices.orgId,org.id),isNull(devices.revokedAt))).get();
+ requireInput(!!dev,'DEVICE_REVOKED','Устройство не найдено или уже отозвано');
+ requireInput(await verifyDeviceSignature(dev.publicJwk,kioskMessage(parsed.payload,'revoke'),parsed.signature),'BAD_SIGNATURE','Код отзыва не принадлежит устройству');
+ await db.update(devices).set({revokedAt:now()}).where(and(eq(devices.id,dev.id),isNull(devices.revokedAt))).run();
+ await audit(org.id,tgId,'device.revoked',dev.id,{locationId:dev.locationId});return {deviceId:dev.id,revoked:true};
+}
+async function resolvePhotoQr(tgId,token){
+ requireInput(isShiftToken(token),'BAD_QR','Некорректный код');
+ if(token.startsWith('k1_')){
+  const parsed=parseKioskToken(token,now());
+  const dev=await db.select().from(devices).where(and(eq(devices.id,parsed.deviceId),isNull(devices.revokedAt))).get();
+  requireInput(!!dev,'DEVICE_REVOKED','Рабочее устройство не зарегистрировано или отозвано');
+  const employee=await db.select().from(employees).where(and(eq(employees.orgId,dev.orgId),eq(employees.tgId,tgId),eq(employees.active,1))).get();
+  requireInput(!!employee,'FORBIDDEN','Сотрудник не привязан к организации');
+  requireInput(await verifyDeviceSignature(dev.publicJwk,kioskMessage(parsed.payload),parsed.signature),'BAD_SIGNATURE','Подпись QR не принадлежит рабочему устройству');
+  const known=await db.select().from(qrPasses).where(eq(qrPasses.token,token)).get();
+  if(!known){await db.delete(qrPasses).where(lt(qrPasses.expiresAt,now()-86400)).run();try{await db.insert(qrPasses).values({token,deviceId:dev.id,orgId:dev.orgId,locationId:dev.locationId,createdAt:parsed.issuedAt,expiresAt:parsed.expiresAt}).run();}
+   catch(e){if(!await db.select().from(qrPasses).where(eq(qrPasses.token,token)).get())throw e;}}
+ }
+ const qr=await db.select().from(qrPasses).where(eq(qrPasses.token,token)).get();
+ requireInput(!!qr,'BAD_QR','QR не найден');validateProofTime(qr.expiresAt,now());return qr;
+}
+async function confirmPhotoMessage(intent){
+ try{
+  const [loc,org,person,shift]=await Promise.all([
+   db.select().from(locations).where(eq(locations.id,intent.locationId)).get(),
+   db.select().from(organizations).where(eq(organizations.id,intent.orgId)).get(),
+   db.select().from(employees).where(eq(employees.id,intent.employeeId)).get(),
+   db.select().from(shifts).where(eq(shifts.id,intent.shiftId)).get()]);
+  const template=shift?.templateId?await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,shift.templateId)).get():null;
+  requireInput(!!loc&&!!org&&!!person&&!!shift,'NOT_FOUND','Данные отметки не найдены');
+  const caption=shiftPhotoCaption({action:intent.action,employee:person.name,location:loc.name,templateName:template?.name,eventAt:intent.createdAt,timezone:org.timezone,confirmed:true,shiftId:shift.id,durationSeconds:shift.endedAt?shift.endedAt-shift.startedAt:null});
+  try{await api.editMessageCaption({chat_id:loc.chatId,message_id:intent.photoMessageId,caption});}
+  catch(e){if(!String(e?.message||e).includes('message is not modified'))throw e;}
+  return true;
+ }catch{return false;}
+}
 export async function scanShift(tgId,token,action,proof=null){
  requireInput(validId(tgId),'UNAUTHORIZED','Требуется пользователь Telegram');
  requireInput(action==='in'||action==='out','BAD_ACTION','Ожидается начало или конец смены');
- requireInput(typeof token==='string'&&/^[A-Za-z0-9_-]{32}$/.test(token),'BAD_QR','Некорректный QR-код');
+ requireInput(isShiftToken(token),'BAD_QR','Некорректный QR-код');
  const qr=await db.select().from(qrPasses).where(eq(qrPasses.token,token)).get();
  requireInput(!!qr,'BAD_QR','QR-код не найден');validateProofTime(qr.expiresAt,proof?.validatedAt??now());
  const dev=await db.select().from(devices).where(and(eq(devices.id,qr.deviceId),isNull(devices.revokedAt))).get();
@@ -263,9 +304,8 @@ export async function scanShift(tgId,token,action,proof=null){
 export async function beginPhotoShift(tgId,token,action){
  requireInput(validId(tgId),'UNAUTHORIZED','Неизвестный сотрудник');
  requireInput(['in','out'].includes(action),'BAD_ACTION','Укажите приход или уход');
- requireInput(typeof token==='string'&&/^[A-Za-z0-9_-]{32}$/.test(token),'BAD_QR','Некорректный код');
- const qr=await db.select().from(qrPasses).where(eq(qrPasses.token,token)).get();
- requireInput(!!qr,'BAD_QR','QR не найден');validateProofTime(qr.expiresAt,now());
+ requireInput(isShiftToken(token),'BAD_QR','Некорректный код');
+ const qr=await resolvePhotoQr(tgId,token);
  const device=await db.select().from(devices).where(and(eq(devices.id,qr.deviceId),isNull(devices.revokedAt))).get();
  requireInput(!!device,'DEVICE_REVOKED','Устройство отозвано');
  const loc=await db.select().from(locations).where(and(eq(locations.id,qr.locationId),eq(locations.orgId,qr.orgId))).get();
@@ -293,7 +333,7 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
  let intent=await db.select().from(photoIntents).where(and(eq(photoIntents.id,intentId),eq(photoIntents.actorTgId,tgId))).get();
  requireInput(!!intent,'BAD_INTENT','Сессия принадлежит другому пользователю либо не найдена');
  requireInput(intent.expiresAt>now() || intent.status==='sent' || intent.status==='done','EXPIRED','Срок съёмки истёк — сканируйте QR заново');
- if(intent.status==='done')return {action:intent.action,shiftId:intent.shiftId,name:'Сотрудник',photoMessageId:intent.photoMessageId,alreadyDone:true};
+ if(intent.status==='done')return {action:intent.action,shiftId:intent.shiftId,name:'Сотрудник',photoMessageId:intent.photoMessageId,alreadyDone:true,notificationDelivered:await confirmPhotoMessage(intent)};
  const deviceQr=await db.select().from(qrPasses).where(eq(qrPasses.token,intent.qrToken)).get();
  const device=await db.select().from(devices).where(and(eq(devices.id,deviceQr.deviceId),isNull(devices.revokedAt))).get();
  requireInput(!!device,'DEVICE_REVOKED','Рабочее устройство больше не активно');
@@ -320,9 +360,10 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
    if(intent.action==='in'){const org=await db.select().from(organizations).where(eq(organizations.id,intent.orgId)).get();
     const plan=await resolveShiftPlan(org,loc,person,intent.createdAt);
     if(plan.templateId)template=await db.select().from(shiftTemplates).where(eq(shiftTemplates.id,plan.templateId)).get();}
+   const org=await db.select().from(organizations).where(eq(organizations.id,intent.orgId)).get();
    const photo=await api.sendPhoto({chat_id:loc.chatId,
     photo:new InputFile(bytes,'shift-selfie.jpg',{type:'image/jpeg'}),
-    caption:`📷 ServGo Смена · ${intent.action==='in'?'Приход':'Уход'}\n${person.name} · ${loc.name}${template?' · '+template.name:''}\nФото-подтверждение; запись смены проверяется системой.`});
+    caption:shiftPhotoCaption({action:intent.action,employee:person.name,location:loc.name,templateName:template?.name,eventAt:intent.createdAt,timezone:org.timezone})});
    const fileId=photo.photo?.at(-1)?.file_id;
    requireInput(!!fileId&&!!photo.message_id,'TELEGRAM_PHOTO','Telegram не вернул подтверждение фотографии');
    await db.update(photoIntents).set({status:'sent',photoFileId:fileId,photoMessageId:photo.message_id}).where(eq(photoIntents.id,intent.id)).run();
@@ -337,7 +378,7 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
  requireInput(intent.status==='sent','IN_PROGRESS','Операция ещё обрабатывается');
  const result=await scanShift(tgId,intent.qrToken,intent.action,{validatedAt:intent.createdAt,eventAt:intent.createdAt,photoFileId:intent.photoFileId,closeComment:intent.closeComment});
  await db.update(photoIntents).set({status:'done',shiftId:result.shiftId}).where(and(eq(photoIntents.id,intent.id),eq(photoIntents.status,'sent'))).run();
- return {...result,photoMessageId:intent.photoMessageId};
+ return {...result,photoMessageId:intent.photoMessageId,notificationDelivered:await confirmPhotoMessage({...intent,shiftId:result.shiftId})};
 }
 
 /** Owner-only dashboard: never return this to group chat or employee. */
