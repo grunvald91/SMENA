@@ -2,6 +2,7 @@ import { api } from 'sdk';
 import { DomainError } from '../lib/errors.js';
 import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,setLocationHours,createShiftTemplate,assignShift } from '../lib/service.js';
 import { rubles } from '../lib/payroll.js';
+import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
 function money(input){
  if(!/^\d{1,7}(?:[.,]\d{1,2})?$/.test(input||'')) throw new DomainError('BAD_MONEY','Сумма: 250 или 250.50');
  const [a,b='']=input.replace(',','.').split('.');return Number(a)*100+Number(b.padEnd(2,'0'));
@@ -13,7 +14,7 @@ function parse(message){
 }
 const HELP=['ServGo Смена — учёт рабочих смен через QR.','',
 'Владелец, в личном чате:','/setup Название организации — создать организацию',
-'/employee TG_ID 350 Имя — добавить сотрудника, 350 ₽/ч',
+EMPLOYEE_HELP,
 '/rate TG_ID 400 — изменить часовую ставку',
 '/bonus TG_ID 1500 Причина — разовая надбавка на сегодня',
 '/shiftbonus TG_ID 200 — автоматическая надбавка за закрытую смену',
@@ -60,9 +61,8 @@ export default async function(message){
    const org=await setup(tgId,cmd.args);await reply(chat,`✅ Организация «${org.name}» создана. Добавьте бота в рабочую группу и вызовите /bind.`);return;
   }
   if(cmd.cmd==='employee'){
-   const m=/^(\d+)\s+(\d+(?:[.,]\d{1,2})?)\s+(.+)$/u.exec(cmd.args);
-   if(!m)throw new DomainError('BAD_COMMAND','Пример: /employee 123456789 350 Александр Петров');
-   const e=await addEmployee(tgId,Number(m[1]),m[3],money(m[2]));
+   const input=parseEmployeeCommand(cmd.args);
+   const e=await addEmployee(tgId,input.tgId,input.name,input.hourlyKopeks);
    await reply(chat,`✅ ${e.name} добавлен. Ставка: ${rubles(e.hourlyKopeks)}/час.`);return;
   }
   if(cmd.cmd==='rate'){

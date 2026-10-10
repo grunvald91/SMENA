@@ -1,5 +1,5 @@
 import { db, api, InputFile } from 'sdk';
-import { eq,and,or,lt,lte,gt,gte,isNull,desc } from 'sdk/db';
+import { eq,and,or,lt,lte,gt,gte,isNull,desc,inArray } from 'sdk/db';
 import { organizations,locations,employees,devices,deviceChallenges,qrPasses,shifts,shiftEvents,bonuses,auditLog,photoIntents,shiftTemplates,shiftAssignments } from '../schema.js';
 import { requireInput,DomainError } from './errors.js';
 import { nonce, pairingMessage,verifyDeviceSignature,requireCrypto,validateProofTime,validateDevicePublicKey } from './security.js';
@@ -37,6 +37,16 @@ export async function bindChat(tgId,chatId,name){
  requireInput(!linked,'ALREADY_BOUND','Эта группа уже связана с рабочей точкой');
  const [loc]=await db.insert(locations).values({orgId:org.id,name:(name||'Точка').slice(0,100),chatId}).returning().run();
  await audit(org.id,tgId,'location.bound',loc.id,{chatId});return loc;
+}
+export async function setLocationName(tgId,locationId,name){
+ const org=await requireOwner(tgId);
+ requireInput(typeof name==='string'&&name.trim().length>=2&&name.trim().length<=100,'BAD_NAME','Название точки: 2–100 символов');
+ const loc=await db.select().from(locations).where(and(eq(locations.id,Number(locationId)),eq(locations.orgId,org.id))).get();
+ requireInput(!!loc,'NOT_FOUND','Рабочая точка не найдена');
+ const updated=name.trim();
+ await db.update(locations).set({name:updated}).where(and(eq(locations.id,loc.id),eq(locations.orgId,org.id))).run();
+ await audit(org.id,tgId,'location.renamed',loc.id,{previousName:loc.name,name:updated});
+ return {id:loc.id,name:updated};
 }
 export async function addEmployee(tgId,employeeTgId,name,hourlyKopeks){
  const org=await requireOwner(tgId);
@@ -282,10 +292,11 @@ export async function scanShift(tgId,token,action,proof=null){
    const org=await db.select().from(organizations).where(eq(organizations.id,qr.orgId)).get();
    requireInput(!!loc&&!!org,'BAD_LOCATION','Рабочая точка недоступна');
    const plan=await resolveShiftPlan(org,loc,person,sec);
+   const note=validateCloseComment(proof?.closeComment);
    let record;
    try {[record]=await db.insert(shifts).values({orgId:qr.orgId,locationId:qr.locationId,employeeId:person.id,startedAt:sec,sourceIn:token,hourlyKopeksSnapshot:person.hourlyKopeks,shiftBonusKopeksSnapshot:person.shiftBonusKopeks||0,createdAt:sec,plannedStartAt:plan.plannedStartAt,plannedEndAt:plan.plannedEndAt,closeGraceMinutes:plan.closeGraceMinutes,templateId:plan.templateId,assignmentId:plan.assignmentId}).returning().run();}
    catch {throw new DomainError('SHIFT_ALREADY_OPEN','Не удалось начать смену: возможно, она уже открыта');}
-   await db.insert(shiftEvents).values({shiftId:record.id,actorTgId:tgId,action:'in',at:sec,qrToken:token,photoFileId:proof?.photoFileId||null}).run();
+   await db.insert(shiftEvents).values({shiftId:record.id,actorTgId:tgId,action:'in',at:sec,qrToken:token,photoFileId:proof?.photoFileId||null,note}).run();
    return {action,shiftId:record.id,at:sec,name:person.name,templateName:plan.templateName};
  }
  requireInput(!!opened,'NO_OPEN_SHIFT','Нет открытой смены');
@@ -340,7 +351,7 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
  if(intent.status==='pending'){
   // Validate the reason BEFORE sending anything to the group; never leave a photo
   // for a rejected early/late close. Use the time the QR was scanned.
-  let note=null;
+  let note=validateCloseComment(closeComment);
   if(intent.action==='out'){
    const opened=await db.select().from(shifts).where(and(eq(shifts.employeeId,intent.employeeId),isNull(shifts.endedAt))).get();
    requireInput(!!opened&&opened.locationId===intent.locationId,'NO_OPEN_SHIFT','Смена не найдена или уже закрыта');
@@ -395,6 +406,11 @@ export async function dashboardOverview(tgId,args=[],stamp=Date.now()){
   makeReport(tgId,args,stamp)
  ]);
  const byTemplate=new Map(templates.map(t=>[t.id,t]));
+ const startEvents=[];
+ for(let i=0;i<history.length;i+=200){
+  startEvents.push(...await db.select().from(shiftEvents).where(and(eq(shiftEvents.action,'in'),inArray(shiftEvents.shiftId,history.slice(i,i+200).map(s=>s.id)))).all());
+ }
+ const commentsByShift=new Map(startEvents.map(e=>[e.shiftId,e.note]));
  const attendance=[];
  for(const a of roster){
   const template=byTemplate.get(a.templateId);if(!template)continue;
@@ -411,7 +427,7 @@ export async function dashboardOverview(tgId,args=[],stamp=Date.now()){
   locations:points,employees:team,templates,assignments:attendance,
   shifts:history.map(s=>({id:s.id,employeeId:s.employeeId,locationId:s.locationId,templateId:s.templateId,
    startedAt:s.startedAt,endedAt:s.endedAt,plannedStartAt:s.plannedStartAt,plannedEndAt:s.plannedEndAt,
-   closeComment:s.closeComment})),
+   startComment:commentsByShift.get(s.id),closeComment:s.closeComment})),
   preview,summary:{scheduled:attendance.length,missing:attendance.filter(x=>x.status==='missing').length,
    completed:history.filter(s=>s.endedAt!=null).length,unclosed:history.filter(s=>s.endedAt==null).length,
    deviations:preview.exceptions.length,workedHours:Number((preview.totals.seconds/3600).toFixed(2)),grossKopeks:preview.totals.grossKopeks}};

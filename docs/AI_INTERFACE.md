@@ -36,3 +36,9 @@ Telegram commands, Mini App endpoints and future AI tools call **the same domain
 - `shifts.close` through QR → photo intent → selfie **requires a human-entered reason** (5–500 characters) when the departure timestamp is outside the saved grace window. `completePhotoShift` checks it before sending an image to Telegram and the shift domain rechecks it before closing.
 - `shifts.close_comment` and `shift_events.note` record the explanation. Future agent reports can read these via the owner-authenticated `reports.preview` result in `exceptions`; don't expose them in public group chats or to unrelated employees.
 - If no schedule is configured on the point, deviations cannot be computed and the system must not invent a planned end. Require an owner to configure `/hours` for meaningful control.
+
+## Attendance comments and point names
+
+- `completePhotoShift` accepts optional `comment` for both arrival and departure; legacy `closeComment` remains accepted when `comment` is absent. Text is trimmed and limited to 500 characters. Required departure reasons are still enforced server-side. Comments stay private to the owner.
+- Arrival comments are stored in `shift_events.note` and the existing photo intent field; departure comments also remain in `shifts.close_comment`. Owner dashboard history includes `startComment` and `closeComment`; employee context and group captions exclude comments.
+- `ownerLocationName` is owner-authorized, checks the point belongs to the same organization, accepts 2–100 characters and audits the rename. No group/device rebinding or schema change is needed.

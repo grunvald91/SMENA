@@ -1,9 +1,10 @@
 import QRCode from 'qrcode';
 import './style.css';
 import {isShiftToken} from '../tgcloud/lib/kiosk-token.js';
+import {startTelegramQrScan} from './qr-scan.js';
 const T=window.Telegram?.WebApp;
 const root=document.getElementById('root');
-const state={context:null,device:null,displayTimer:null,issuing:false};
+const state={context:null,device:null,displayTimer:null,issuing:false,stopCamera:null};
 function element(tag,props={},...children){
  const el=document.createElement(tag);
  for(const [k,v] of Object.entries(props)){
@@ -16,7 +17,7 @@ function element(tag,props={},...children){
  for(const child of children){if(child!=null)el.append(child instanceof Node?child:document.createTextNode(String(child)));}
  return el;
 }
-function render(...children){root.replaceChildren(...children);}
+function render(...children){state.stopCamera?.();state.stopCamera=null;root.replaceChildren(...children);}
 function msg(s,bad=false){const p=element('p',{className:bad?'error':'notice'},s);root.prepend(p);setTimeout(()=>p.remove(),6000);}
 function call(name,input={}) {return new Promise((resolve,reject)=>{
  if(!T?.Serverless?.call)return reject(new Error('Откройте Mini App внутри Telegram.'));
@@ -83,49 +84,60 @@ async function displayKiosk(){
  }
  await tick();
 }
+function openScanner(){
+ try{startTelegramQrScan(T,state.context?.botUsername,{
+  onToken:token=>showScan(token).catch(e=>msg(e.message,true)),
+  onInvalid:()=>T.showAlert?.('Это не QR рабочего места ServGo Смена. Наведите камеру на код рабочего экрана.')
+ });}catch(e){msg(e.message,true);}
+}
+function scanButton(){return element('button',{onclick:openScanner},'Сканировать QR');}
 async function showScan(token){
  if(!isShiftToken(token))throw new Error('Некорректная ссылка QR');
  const main=element('section',{className:'panel'},element('h2',{},'Отметка смены'),
   element('p',{},'QR действителен 30 секунд. Сначала выберите действие, затем сделайте живое селфи на фронтальную камеру. Загрузка из галереи не предусмотрена.'));
  for(const [label,action] of [['Я пришёл на работу','in'],['Я ухожу с работы','out']]){
   main.append(element('button',{onclick:async()=>{
+   const buttons=main.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
    try{const intent=await call('beginPhotoShift',{token,action});await showCamera(intent);}
-   catch(e){msg(e.message,true);}
+   catch(e){msg(e.message,true);buttons.forEach(b=>b.disabled=false);}
   }},label));
  }
+ main.append(element('button',{className:'outline',onclick:openScanner},'Сканировать новый QR'),element('button',{className:'outline',onclick:renderHome},'Назад'));
  render(main);
 }
 async function showCamera(intent){
  const panel=element('section',{className:'panel'},element('h2',{},'Селфи для отметки'),
   element('p',{},`${intent.employee} · ${intent.location}${intent.templateName?' · '+intent.templateName:''}. Сделайте фотографию в форме, чтобы она попала в рабочую группу.`));
- let reason=null;
+ const review=intent.closeReview;
+ const reason=element('textarea',{id:'attendance-comment',placeholder:review?.required?'Укажите причину отклонения от графика':'Добавьте комментарий, если нужно',maxlength:500,rows:3});
  if(intent.action==='out'){
-  const review=intent.closeReview;
   if(review?.required){
    const minutes=Math.abs(review.differenceMinutes);
    panel.append(element('p',{className:'error'},`Окончание смены ${review.status==='early'?'раньше':'позже'} графика примерно на ${minutes} мин. Укажите причину до отправки фото.`));
   }
-  reason=element('textarea',{placeholder:review?.required?'Причина раннего или позднего ухода (обязательно)':'Комментарий к закрытию (необязательно)',maxlength:500,rows:3});
-  panel.append(reason);
  }
+ panel.append(element('label',{className:'field',for:'attendance-comment'},review?.required?'Комментарий / причина (обязательно)':'Комментарий (необязательно)'),reason,
+  element('p',{className:'muted'},'Комментарий сохранится в отметке и будет доступен руководителю.'));
  const video=element('video',{autoplay:'',playsinline:'',muted:'',className:'selfie-video'});
  video.muted=true;video.setAttribute('playsinline','');
  const take=element('button',{disabled:true},'Сфотографировать');
  const result=element('p',{className:'muted'},'Запрашиваем доступ к камере…');
- panel.append(video,take,result);render(panel);
+ panel.append(video,take,result,element('button',{className:'outline',onclick:renderHome},'Отменить'));render(panel);
  if(!navigator.mediaDevices?.getUserMedia){result.textContent='Камера недоступна внутри этого клиента Telegram. Для этой отметки используйте совместимый телефон.';return;}
  let stream;
  try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'user'},width:{ideal:960},height:{ideal:1280}}});
-  video.srcObject=stream;await video.play();take.disabled=false;result.textContent='Камера готова. Снимите селфи.';
- }catch(e){result.textContent='Не удалось открыть камеру: '+(e.name==='NotAllowedError'?'разрешите доступ к камере в настройках Telegram.':e.message);return;}
+  if(!panel.isConnected){stream.getTracks().forEach(t=>t.stop());return;}
+  state.stopCamera=stop;video.srcObject=stream;await video.play();take.disabled=false;result.textContent='Камера готова. Снимите селфи.';
+ }catch(e){stop();result.textContent='Не удалось открыть камеру: '+(e.name==='NotAllowedError'?'разрешите доступ к камере в настройках Telegram.':e.message);return;}
  let captured=null;
- function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
- const end=()=>{stop();};
+ function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}window.removeEventListener('pagehide',end);}
+ function end(){stop();}
  window.addEventListener('pagehide',end,{once:true});
  take.addEventListener('click',async()=>{
   if(captured)return;
   if(intent.closeReview?.required && (!reason || reason.value.trim().length<5)){result.textContent='Укажите причину отклонения от графика (не менее 5 символов).';return;}
   if(video.videoWidth<1||video.videoHeight<1){result.textContent='Видеопоток не готов. Повторите.';return;}
+  const comment=reason.value.trim();reason.disabled=true;
   const canvas=document.createElement('canvas');
   const ratio=Math.min(1,900/video.videoWidth,900/video.videoHeight);
   canvas.width=Math.max(1,Math.floor(video.videoWidth*ratio));canvas.height=Math.max(1,Math.floor(video.videoHeight*ratio));
@@ -137,18 +149,19 @@ async function showCamera(intent){
   const send=async()=>{
    submit.disabled=true;result.textContent='Отправляем фотографию в Telegram и проверяем отметку…';
    try{
-    const r=await call('completePhotoShift',{intentId:intent.intentId,selfieBase64:captured,closeComment:reason?.value||''});
+    const r=await call('completePhotoShift',{intentId:intent.intentId,selfieBase64:captured,comment});
     render(element('section',{className:'panel'},element('h2',{},'✅ Отметка зарегистрирована'),
      element('p',{},`${intent.employee}: ${r.action==='in'?'начало':'окончание'} смены #${r.shiftId}`),
      element('p',{},r.notificationDelivered?'Фото и время отметки подтверждены в рабочей группе.':'Смена сохранена и фото отправлено, но подпись сообщения не обновилась.'),
-     r.notificationDelivered?null:element('button',{onclick:async()=>{try{const retry=await call('completePhotoShift',{intentId:intent.intentId});if(retry.notificationDelivered){msg('Сообщение в группе подтверждено.');}else msg('Подпись пока не обновилась. Проверьте права бота.',true);}catch(e){msg(e.message,true);}}},'Обновить сообщение в группе')));
+     r.notificationDelivered?null:element('button',{onclick:async()=>{try{const retry=await call('completePhotoShift',{intentId:intent.intentId});if(retry.notificationDelivered){msg('Сообщение в группе подтверждено.');}else msg('Подпись пока не обновилась. Проверьте права бота.',true);}catch(e){msg(e.message,true);}}},'Обновить сообщение в группе'),
+     scanButton(),element('button',{className:'outline',onclick:renderHome},'На главную')));
    }catch(e){result.textContent='Не удалось закончить отметку: '+e.message+' Попробуйте отправить ещё раз, не делая нового снимка.';submit.disabled=false;}
   };
   const submit=take.cloneNode(true);
   take.replaceWith(submit);submit.textContent='Повторить отправку';submit.disabled=true;
   submit.addEventListener('click',send);
   await send(); // one shutter press: photo is sent automatically; button is only for failed retries
- },{once:true});
+ });
 }
 // Owner-only data is served by authenticated Telegram Serverless endpoints.
 const currency=kopeks=>(Number(kopeks||0)/100).toLocaleString('ru-RU',{style:'currency',currency:'RUB'});
@@ -249,8 +262,8 @@ function dashboardAnalyticsPanel(d){
     x.name,(x.differenceMinutes<0?'Раньше ':'Позже ')+Math.abs(x.differenceMinutes)+' мин',x.closeComment||'Не указана'
    ])):ui('p',{className:'muted'},'Отклонений за период не обнаружено.')),
   ui('section',{className:'panel'},ui('h3',{},'История смен'),
-   table(['Сотрудник','Начало','Конец','Длительность'],shifts.slice(0,100).map(s=>[
-    lookup(d.employees,s.employeeId)?.name||s.employeeId,dateOnly(s.startedAt),dateOnly(s.endedAt),((s.endedAt-s.startedAt)/3600).toFixed(2)+' ч'
+   table(['Сотрудник','Начало','Конец','Длительность','Комментарий при приходе','Комментарий при уходе'],shifts.slice(0,100).map(s=>[
+    lookup(d.employees,s.employeeId)?.name||s.employeeId,dateOnly(s.startedAt),dateOnly(s.endedAt),((s.endedAt-s.startedAt)/3600).toFixed(2)+' ч',s.startComment||'—',s.closeComment||'—'
    ]))));
 }
 function downloadReportCsv(d){
@@ -304,7 +317,7 @@ function renderDashboard(){
  period.addEventListener('change',()=>{dashboard.period=period.value;refreshDashboard().catch(e=>msg(e.message,true));});
  const header=ui('header',{className:'dashboard-header'},ui('div',{},ui('span',{className:'eyebrow'},'ServGo / управление персоналом'),
   ui('h1',{},'Смена'),ui('p',{className:'muted'},d.organization.name)),
-  ui('div',{className:'header-actions'},period,ui('button',{className:'outline',onclick:renderHome},'QR-устройство')));
+  ui('div',{className:'header-actions'},scanButton(),period,ui('button',{className:'outline',onclick:renderHome},'QR-устройство')));
  const nav=ui('nav',{className:'dashboard-nav'},...[
   ['overview','Обзор'],['schedule','График'],['analytics','Аналитика'],['reports','Отчёты'],['settings','Настройки']
  ].map(([id,title])=>navButton(id,title)));
@@ -315,10 +328,14 @@ function renderDashboard(){
 function renderHome(){
  const owner=state.context?.owner;
  const box=element('section',{className:'panel'},element('h1',{},'ServGo Смена'),
-  element('p',{},owner?`Организация: ${owner.name}`:'Для открытия и закрытия смен сканируйте QR на рабочем месте.'));
+  element('p',{},owner?`Организация: ${owner.name}`:'Для открытия и закрытия смен сканируйте QR на рабочем месте.'),scanButton());
  if(owner){
   const choices=element('select');for(const loc of owner.locations)choices.append(element('option',{value:loc.id},`${loc.name} (#${loc.id})`));
+  const pointName=element('input',{type:'text',maxlength:100,value:owner.locations[0]?.name||'',placeholder:'Название рабочей точки'});
+  choices.addEventListener('change',()=>{pointName.value=owner.locations.find(x=>x.id===Number(choices.value))?.name||'';});
   box.append(element('h2',{},'Рабочее QR-устройство'),choices,
+    element('details',{},element('summary',{},'Изменить название точки'),element('label',{className:'field'},'Название в сообщениях с фото',pointName),
+     element('button',{className:'outline',onclick:async()=>{try{await call('ownerLocationName',{locationId:Number(choices.value),name:pointName.value});state.context=await call('getContext');renderHome();msg('Название точки обновлено.');}catch(e){msg(e.message,true);}}},'Сохранить название')),
     element('p',{className:'muted'},'Только одно устройство на точку. Для замены нужен отзыв с подписанным ключом старого устройства.'),
     element('button',{onclick:async()=>{try{await enroll(Number(choices.value));}catch(e){msg(e.message,true);}}},'Зарегистрировать это устройство'));
   if(state.device){box.append(element('button',{className:'outline',onclick:()=>displayKiosk().catch(e=>msg(e.message,true))},'Показать QR этого устройства'));}
