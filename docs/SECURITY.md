@@ -17,7 +17,7 @@
 - Salary preview is NOT compliant payroll and omits labor law rules. Never present as final payslip.
 
 ## Preproduction checklist
-1. Verify Serverless runtime `crypto.subtle`, `crypto.getRandomValues`, `atob`, `btoa`, `Intl`, module import support on the actual bot with CLI `run`.
+1. Serverless runtime verification completed: secure RNG and bundled P-256 signature verification work. Native ECDSA/JWK and browser base64 globals are unavailable. Keep the bundled `@noble/curves` verifier, local Base64 codec and their tests; never disable signature checks.
 2. Verify authenticated endpoints in Telegram Mini App on real Android/iOS devices.
 3. Verify Main Mini App deep-link `?startapp=scan_<token>` in Telegram and camera scan behavior.
 4. Determine where SQLite/database and photographs are stored, retention, access, legal grounds, agreements, and 152-FZ localization for actual users in Russia; do not store real employee PII before resolved.
