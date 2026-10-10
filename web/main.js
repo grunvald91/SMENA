@@ -338,7 +338,7 @@ function renderReport(r){
 }
 (async()=>{
  try{
-  if(!T?.Serverless?.call){render(ui('section',{className:'public-page'},ui('span',{className:'eyebrow'},'ServGo · управление сотрудниками'),ui('h1',{},'ServGo Смена'),ui('p',{},'Графики, QR-отметки с селфи, табель и месячные отчёты в одном кабинете.'),ui('h2',{},'Доступ владельца'),ui('p',{},'Для доступа к реальным данным откройте Mini App вашего бота ServGo Смена в Telegram. Обычная ссылка не предоставляет доступ к зарплатам и персональным данным.'),ui('p',{className:'muted'},'Этот адрес станет веб-кабинетом после внедрения отдельной серверной авторизации.')));return;}T.ready();T.expand();
+  if(!T?.Serverless?.call||!T?.initData){render(ui('section',{className:'public-page'},ui('span',{className:'eyebrow'},'ServGo · управление сотрудниками'),ui('h1',{},'ServGo Смена'),ui('p',{},'Графики, QR-отметки с селфи, табель и месячные отчёты в одном кабинете.'),ui('h2',{},'Доступ владельца'),ui('p',{},'Для доступа к реальным данным откройте Mini App вашего бота ServGo Смена в Telegram. Обычная ссылка не предоставляет доступ к зарплатам и персональным данным.'),ui('a',{href:'https://t.me/servgo_smena_bot',className:'primary'},'Открыть бота в Telegram'),ui('p',{className:'muted'},'В чате бота нажмите «Открыть Смену».')));return;}T.ready();T.expand();
   state.context=await call('getContext',{});
   try{state.device=JSON.parse(localStorage.getItem('servgo-kiosk-device')||'null');}catch{state.device=null;}
   const token=state.context.scanToken || new URLSearchParams(location.search).get('scan');
