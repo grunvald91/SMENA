@@ -1,5 +1,6 @@
 import { requireInput,DomainError } from './errors.js';
 import { encodeBase64,decodeBase64 } from './base64.js';
+import { validateP256PublicKey,verifyP256 } from './vendor/p256.js';
 const encoder=new TextEncoder();
 export function requireCrypto() {
   requireInput(!!globalThis.crypto?.getRandomValues && !!globalThis.crypto?.subtle,'CRYPTO_UNAVAILABLE','Нет проверенного WebCrypto в среде Telegram; безопасная QR-авторизация недоступна');
@@ -18,13 +19,22 @@ export function decodeBase64url(value) {
   catch {throw new DomainError('BAD_SIGNATURE','Некорректная подпись');}
 }
 export function pairingMessage(challengeId,nonceValue) {return `ServGoShift:QR:v1:${challengeId}:${nonceValue}`;}
+export function validateDevicePublicKey(jwk) {
+  requireInput(jwk?.kty==='EC' && jwk?.crv==='P-256' && jwk?.alg!=='none' &&
+    typeof jwk.x==='string' && typeof jwk.y==='string','BAD_DEVICE_KEY','Требуется публичный ключ ECDSA P-256');
+  try {
+    const x=decodeBase64url(jwk.x),y=decodeBase64url(jwk.y);
+    if(x.length!==32||y.length!==32)throw new Error('Invalid coordinate length');
+    const raw=new Uint8Array(65);raw[0]=4;raw.set(x,1);raw.set(y,33);
+    validateP256PublicKey(raw);return raw;
+  } catch {throw new DomainError('BAD_DEVICE_KEY','Не удалось проверить ключ устройства');}
+}
 export async function verifyDeviceSignature(jwk,message,signatureBase64) {
   requireCrypto();
   requireInput(jwk?.kty==='EC' && jwk?.crv==='P-256' && jwk?.alg!=='none' && jwk?.x && jwk?.y,'BAD_DEVICE_KEY','Требуется публичный ключ ECDSA P-256');
   try {
-    const key=await crypto.subtle.importKey('jwk',{kty:'EC',crv:'P-256',x:jwk.x,y:jwk.y,ext:true},
-      {name:'ECDSA',namedCurve:'P-256'},false,['verify']);
-    return await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,decodeBase64url(signatureBase64),encoder.encode(message));
+    const key=validateDevicePublicKey(jwk);
+    return verifyP256(decodeBase64url(signatureBase64),encoder.encode(message),key);
   } catch(e) {if(e instanceof DomainError) throw e;return false;}
 }
 export function validateProofTime(expiresAt,nowSeconds){requireInput(expiresAt>nowSeconds,'EXPIRED','Срок действия кода истёк');}

@@ -2,7 +2,7 @@ import { db, api, InputFile } from 'sdk';
 import { eq,and,or,lt,lte,gt,gte,isNull,desc } from 'sdk/db';
 import { organizations,locations,employees,devices,deviceChallenges,qrPasses,shifts,shiftEvents,bonuses,auditLog,photoIntents,shiftTemplates,shiftAssignments } from '../schema.js';
 import { requireInput,DomainError } from './errors.js';
-import { nonce, pairingMessage,verifyDeviceSignature,requireCrypto,validateProofTime } from './security.js';
+import { nonce, pairingMessage,verifyDeviceSignature,requireCrypto,validateProofTime,validateDevicePublicKey } from './security.js';
 import { reportPeriod,formatDate,startOfLocalDay,addDays } from './time.js';
 import { computePreview,rubles } from './payroll.js';
 import { decodeSelfie } from './photo.js';
@@ -174,8 +174,7 @@ export async function enrollDevice(tgId,locationId,publicJwk) {
  requireInput(publicJwk?.kty==='EC'&&publicJwk?.crv==='P-256'&&typeof publicJwk.x==='string'&&typeof publicJwk.y==='string',
  'BAD_DEVICE_KEY','Неверный публичный ключ устройства');
  // Verify key structure, but enrollment is explicitly owner-authorized. Physical uniqueness is not attested.
- try {await crypto.subtle.importKey('jwk',{kty:'EC',crv:'P-256',x:publicJwk.x,y:publicJwk.y,ext:true},
-    {name:'ECDSA',namedCurve:'P-256'},false,['verify']);}catch {throw new DomainError('BAD_DEVICE_KEY','Не удалось проверить ключ устройства');}
+ validateDevicePublicKey(publicJwk);
  const previous=await db.select().from(devices).where(and(eq(devices.locationId,loc.id),isNull(devices.revokedAt))).get();
  requireInput(!previous,'DEVICE_ALREADY_ACTIVE','У точки уже есть активное устройство. Для замены сначала отзовите его ключ на старом устройстве. При утере потребуется отдельное восстановление.');
  const [dev]=await db.insert(devices).values({orgId:org.id,locationId:loc.id,publicJwk,registeredBy:tgId,createdAt:now()}).returning().run();

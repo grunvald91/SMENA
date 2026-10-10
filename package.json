@@ -10,8 +10,16 @@
     "build": "vite build",
     "deploy": "npm run build && tgcloud push",
     "status": "tgcloud status",
-    "migrate:dry": "tgcloud migrate --dry-run"
+    "migrate:dry": "tgcloud migrate --dry-run",
+    "build:crypto": "node scripts/build_p256.mjs"
   },
-  "devDependencies": {"@tgcloud/cli":"^0.2.0","vite":"^7.1.0"},
-  "dependencies": {"qrcode":"^1.5.4"}
+  "devDependencies": {
+    "@noble/curves": "2.4.0",
+    "@tgcloud/cli": "^0.2.0",
+    "vite": "^7.1.0",
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
 }
