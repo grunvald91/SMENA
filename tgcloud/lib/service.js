@@ -384,7 +384,21 @@ export async function makeReport(tgId,args=[],stamp=Date.now()){
    or(isNull(shifts.endedAt),gt(shifts.endedAt,Math.floor(period.startMs/1000))))).all(),
   db.select().from(bonuses).where(and(eq(bonuses.orgId,org.id),gte(bonuses.date,period.start),lt(bonuses.date,period.end))).all()
  ]);
- return computePreview({employees:people,shifts:records,bonuses:extras,period});
+ const preview=computePreview({employees:people,shifts:records,bonuses:extras,period});
+ const [assigned,templates]=await Promise.all([
+  db.select().from(shiftAssignments).where(and(eq(shiftAssignments.orgId,org.id),gte(shiftAssignments.workDate,period.start),lt(shiftAssignments.workDate,period.end))).all(),
+  db.select().from(shiftTemplates).where(eq(shiftTemplates.orgId,org.id)).all()
+ ]);
+ const byId=new Map(templates.map(t=>[t.id,t]));
+ preview.missingAssignments=[];
+ for(const a of assigned){
+  const template=byId.get(a.templateId);if(!template)continue;
+  const expected=templateWindow(a.workDate,template,org.timezone);
+  if(expected.endAt*1000>stamp||records.some(s=>s.assignmentId===a.id))continue;
+  preview.missingAssignments.push({assignmentId:a.id,workDate:a.workDate,employeeId:a.employeeId,
+   name:people.find(p=>p.id===a.employeeId)?.name||'Сотрудник',templateName:template.name,plannedStartAt:expected.startAt,plannedEndAt:expected.endAt});
+ }
+ return preview;
 }
 export async function findProblems(tgId,stamp=Date.now()) {
  const org=await requireOwner(tgId),todayMs=startOfLocalDay(formatDate(stamp,org.timezone),org.timezone);
@@ -401,6 +415,10 @@ export function formatReport(r){
    const when=sec=>new Date(sec*1000).toLocaleString('ru-RU',{timeZone:r.period.tz,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
    lines.push(`#${item.shiftId} ${item.name}: ${item.status==='early'?'раньше':'позже'} на ${Math.abs(item.differenceMinutes)} мин; план ${when(item.plannedEndAt)}, факт ${when(item.endedAt)}. Причина: ${item.closeComment||'⚠️ не указана'}`);
   }
+ }
+ if(r.missingAssignments?.length){
+  lines.push('',`⚠️ Не отмечены назначенные смены (${r.missingAssignments.length}):`);
+  for(const a of r.missingAssignments)lines.push(`${a.workDate} · ${a.name} · ${a.templateName} (нет отметки о приходе)`);
  }
  lines.push('',`Всего: ${rubles(r.totals.grossKopeks)}; незакрытых смен: ${r.totals.unclosed}`,
   'Без НДФЛ, других удержаний, коэффициентов и юридического расчёта зарплаты. Требуется проверка бухгалтером.');
