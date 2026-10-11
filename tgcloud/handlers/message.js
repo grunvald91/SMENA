@@ -43,12 +43,12 @@ async function reply(chatId,message) {
  for(const part of parts)await api.sendMessage({chat_id:chatId,text:part});
 }
 export default async function(message){
- if(!message?.from?.id||message.from.is_bot||!message.chat?.id) return;
- const cmd=parse(message),tgId=message.from.id,chat=message.chat.id,privateChat=message.chat.type==='private';
+ if(!message?.chat?.id)return;
+ const cmd=parse(message),tgId=message.from?.id,chat=message.chat.id,privateChat=message.chat.type==='private';
  if(!privateChat){
   try{await captureWorkMessage(message);}catch(e){console.error('AI message capture failed',e?.code||e?.name||'unknown');}
  }
- if(!cmd) return;
+ if(!tgId||message.from?.is_bot||!cmd) return;
  try {
   if(cmd.cmd==='start'||cmd.cmd==='help'){await reply(chat,HELP);return;}
   if(cmd.cmd==='id'){await reply(chat,`Telegram ID: ${tgId}`);return;}
