@@ -59,3 +59,10 @@ export function redactForModel(text){
   .replace(/\b(?:\d[ -]*?){16}\b/gu,'[CARD]')
   .replace(/@(?:[A-Za-z0-9_]{5,})/gu,'[USERNAME]');
 }
+
+/** Telegram links for private supergroups; ordinary groups have no stable /c link. */
+export function evidenceUrl(chatId,messageId){
+ const id=String(chatId||'');
+ if(!/^-100\d+$/.test(id)||!Number.isSafeInteger(Number(messageId))||Number(messageId)<=0)return null;
+ return 'https://t.me/c/'+id.slice(4)+'/'+messageId;
+}
