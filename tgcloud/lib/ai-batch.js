@@ -24,6 +24,8 @@ export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNa
   const list=reactionIndex.get(key)||[];
   for(const r of (item.reactions||[])){
    if(r?.type==='emoji'&&r.emoji&&list.length<12)list.push(String(r.emoji).slice(0,8));
+   else if(r?.type?.type==='emoji'&&r.type.emoji&&list.length<12)list.push(String(r.type.emoji).slice(0,8)+' ×'+Math.min(999,Math.max(0,Number(r.total)||0)));
+
   }
   reactionIndex.set(key,list);
  }
