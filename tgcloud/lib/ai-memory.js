@@ -116,8 +116,9 @@ export async function decideFinding(ownerTgId,id,action,correction=''){
  requireInput(!!item,'NOT_FOUND','Вывод не найден');
  requireInput(item.status==='proposed','ALREADY_REVIEWED','Вывод уже проверен');
  if(action==='correct')requireInput(correction.trim().length>=5&&correction.length<=1000,'BAD_CORRECTION','Уточнение должно содержать 5–1000 символов');
- await db.update(aiFindings).set({status,reviewedBy:ownerTgId,reviewedAt:clock(),
+ const saved=await db.update(aiFindings).set({status,reviewedBy:ownerTgId,reviewedAt:clock(),
   correctedStatement:action==='correct'?correction.trim():null}).where(and(eq(aiFindings.id,item.id),eq(aiFindings.orgId,org.id),eq(aiFindings.status,'proposed'))).run();
+ requireInput(saved.rowsAffected===1,'ALREADY_REVIEWED','Вывод уже был проверен в другом действии');
  return {id:item.id,status};
 }
 
