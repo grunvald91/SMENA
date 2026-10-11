@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
-command -v node >/dev/null || { echo "Node.js 18+ необходим"; exit 1; }
-node -e 'if (Number(process.versions.node.split(".")[0]) < 18) process.exit(1)' || { echo "Требуется Node.js >=18"; exit 1; }
+command -v node >/dev/null || { echo "Требуется Node.js 20.19+ или 22.12+"; exit 1; }
+node -e 'const [maj,min]=process.versions.node.split(".").map(Number);if(!((maj===20&&min>=19)||(maj===22&&min>=12)||maj>22))process.exit(1)' || { echo "Vite 7 требует Node.js 20.19+ или 22.12+"; exit 1; }
 for exe in vite tgcloud; do
   if [[ ! -x "./node_modules/.bin/$exe" ]]; then
     echo "Не найден $exe. В GitHub Codespaces выполните: npm install --no-audit --no-fund"
