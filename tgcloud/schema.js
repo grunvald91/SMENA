@@ -103,6 +103,7 @@ export const aiMessages=table('ai_messages',{
  editedAt:integer('edited_at'),kind:text('kind').notNull(),
  content:text('content').notNull().default(''),
  fileId:text('file_id'),mediaGroupId:text('media_group_id'),
+ mimeType:text('mime_type'),fileName:text('file_name'),fileSize:integer('file_size'),
  capturedAt:integer('captured_at').notNull()
 },t=>({unique:uniqueIndex('uq_ai_message_chat_id').on(t.chatId,t.messageId),
  orgTime:index('idx_ai_msg_org_sent').on(t.orgId,t.sentAt)}));
