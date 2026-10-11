@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 # Publish only the workplace QR static site. Authentication uses existing SSH configuration.
-# Usage: bash scripts/kiosk_vps_deploy.sh user@host /absolute/path/to/kiosk.tar.gz
+# Usage: KIOSK_SSH_IDENTITY=/path/to/existing/key bash scripts/kiosk_vps_deploy.sh user@host /absolute/path/to/kiosk.tar.gz [verified-archive-sha256]
 host="${1:?SSH host is required}"
 archive="${2:?Verified kiosk archive is required}"
+expected_digest="${3:-0e36bd0fa9c67061fc7b828787b5a633d361544c1d26fbbf83ef3848703635ab}"
 [[ "$host" != -* && -s "$archive" ]] || { echo 'Invalid host or missing archive'; exit 2; }
-[[ "$(sha256sum "$archive" | cut -d ' ' -f 1)" == '0e36bd0fa9c67061fc7b828787b5a633d361544c1d26fbbf83ef3848703635ab' ]] || {
+[[ "$expected_digest" =~ ^[0-9a-f]{64}$ && "$(sha256sum "$archive" | cut -d ' ' -f 1)" == "$expected_digest" ]] || {
   echo 'Archive does not match the prepared 2026-10-11 release'; exit 2;
 }
 release="20261011-eb8fe3a-$(date -u +%H%M%S)"
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10)
+if [[ -n "${KIOSK_SSH_IDENTITY:-}" ]]; then
+  [[ -s "$KIOSK_SSH_IDENTITY" ]] || { echo 'Existing SSH identity is missing'; exit 2; }
+  ssh_args+=(-i "$KIOSK_SSH_IDENTITY" -o IdentitiesOnly=yes)
+fi
 upload_dir=$(ssh "${ssh_args[@]}" "$host" 'mktemp -d /tmp/smena-kiosk-upload.XXXXXXXX')
 [[ "$upload_dir" =~ ^/tmp/smena-kiosk-upload\.[A-Za-z0-9]+$ ]] || { echo 'Unexpected upload directory'; exit 3; }
 scp "${ssh_args[@]}" "$archive" "$host:$upload_dir/kiosk.tar.gz"
@@ -22,11 +27,17 @@ root=/var/www/smena-servgo
 [[ -L "$root/current" ]]
 previous=$(readlink -f "$root/current")
 [[ "$previous" == "$root/releases/"* && -s "$previous/index.html" ]]
+backup_dir="/root/smena-deploy-backup-$release"
+mkdir -m 700 "$backup_dir"
+tar -czf "$backup_dir/site-before.tar.gz" -C /var/www smena-servgo
+sha256sum "$backup_dir/site-before.tar.gz"
 mkdir "$root/releases/$release"
 tar -xzf "$upload_dir/kiosk.tar.gz" -C "$root/releases/$release" --no-same-owner
 cd "$root/releases/$release"
 sha256sum -c SHA256SUMS
 [[ -s index.html ]]
+# Keep old hashed assets available to pages loaded just before the switch.
+cp -an "$previous/assets/." assets/
 nginx -t
 # Preserve all old releases. A failed public check switches the link back.
 ln -s "$root/releases/$release" "$root/current.$release"
@@ -45,5 +56,5 @@ while read -r digest path; do
     exit 5
   }
 done < SHA256SUMS
-printf 'Kiosk deployed: %s\nPrevious release preserved: %s\n' "$release" "$previous"
+printf 'Kiosk deployed: %s\nPrevious release preserved: %s\nBackup: %s/site-before.tar.gz\n' "$release" "$previous" "$backup_dir"
 REMOTE
