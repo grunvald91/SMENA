@@ -156,3 +156,14 @@ export const aiParticipants=table('ai_participants',{
  orgId:integer('org_id').notNull(),actorKey:text('actor_key').notNull(),
  alias:text('alias').notNull()
 },t=>({actor:uniqueIndex('uq_ai_participant_org').on(t.orgId,t.actorKey)}));
+
+
+// One tenant-wide calibration clock. A due review is dispatched on the next
+// observed event; a separate trusted scheduler is required for exact deadlines.
+export const aiCalibrationSchedules=table('ai_calibration_schedules',{
+ orgId:integer('org_id').primaryKey(),
+ dueAt:integer('due_at').notNull(),
+ lastSentAt:integer('last_sent_at'),
+ busyUntil:integer('busy_until').notNull().default(0),
+ claimToken:text('claim_token')
+});
