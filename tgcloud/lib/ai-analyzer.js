@@ -1,6 +1,6 @@
 import {db} from 'sdk';
 import {eq,and,gt,asc,inArray,desc,lte} from 'sdk/db';
-import {aiMessages,aiReactions,aiFindings,aiGatewaySettings,aiAnalysisProgress,aiChatSettings,employees,aiParticipants} from '../schema.js';
+import {aiMessages,aiReactions,aiFindings,aiGatewaySettings,aiAnalysisProgress,aiChatSettings,employees,aiParticipants,aiReactionTotals} from '../schema.js';
 import {requireOwner} from './service.js';
 import {requireInput} from './errors.js';
 import {nonce} from './security.js';
@@ -63,6 +63,7 @@ export async function analyzeNextBatch(ownerTgId){
    .orderBy(desc(aiFindings.reviewedAt)).limit(25).all();
   const ids=messages.map(x=>x.messageId);
   const reactions=await db.select().from(aiReactions).where(and(eq(aiReactions.orgId,org.id),inArray(aiReactions.messageId,ids))).limit(400).all();
+  const anonymous=await db.select().from(aiReactionTotals).where(and(eq(aiReactionTotals.orgId,org.id),inArray(aiReactionTotals.messageId,ids))).limit(200).all();
   const team=await db.select().from(employees).where(eq(employees.orgId,org.id)).limit(200).all();
   // Actor keys are retained only inside ServGo. The provider sees stable random aliases.
   const keys=[...new Set([...messages.map(m=>m.authorTgId?'u:'+m.authorTgId:m.senderChatId?'c:'+m.senderChatId:null),...team.map(e=>e.tgId?'u:'+e.tgId:null)].filter(Boolean))];
@@ -75,7 +76,7 @@ export async function analyzeNextBatch(ownerTgId){
    const pseudonyms=await db.select().from(aiParticipants).where(and(eq(aiParticipants.orgId,org.id),inArray(aiParticipants.actorKey,keys))).all();
    for(const p of pseudonyms)actorAliases[p.actorKey]=p.alias;
   }
-  const {payload,sourceMap}=buildPrivateBatch(messages,{confirmed,reactions:reactions.filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),actorAliases});
+  const {payload,sourceMap}=buildPrivateBatch(messages,{confirmed,reactions:[...reactions,...anonymous].filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),actorAliases});
   const response=await callServGoAiGateway(config.capability,payload);
   const candidates=groundBatchFindings(response.findings,sourceMap);
   requireInput(response.findings.length===0||candidates.length>0,'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
