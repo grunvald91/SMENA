@@ -381,6 +381,34 @@ function renderHome(){
     onCode:code=>confirmPairing(code).catch(e=>msg(e.message,true)),
     onInvalid:()=>T.showAlert?.('Нужен QR подключения с рабочего экрана smena.servgo.ru.')
    });}catch(e){msg(e.message,true);}}},'Сканировать код подключения'),manual,paired);
+  const deviceInfo=element('p',{className:'muted'},'Проверить, какой QR-экран подключён к этой точке.');
+  const deviceActions=element('div');
+  const queryActiveDevice=async()=>{
+   const locationId=Number(choices.value);
+   if(!Number.isSafeInteger(locationId)||locationId<=0)throw new Error('Сначала подключите рабочую группу.');
+   const rows=await call('ownerDevices');
+   const record=(rows||[]).find(x=>x.locationId===locationId);
+   deviceActions.replaceChildren();
+   if(!record){deviceInfo.textContent='У этой точки нет активного рабочего экрана.';return;}
+   deviceInfo.textContent='✅ Рабочий экран подключён. Если устройство потеряно, его можно отозвать и подключить новое.';
+   const button=element('button',{className:'outline',onclick:async()=>{
+    try{
+     const question='Отключить рабочий QR-экран? Старые QR-коды перестанут работать. После этого подключите новый экран.';
+     const confirmed=await new Promise(resolve=>{
+      if(typeof T?.showConfirm==='function')T.showConfirm(question,resolve);
+      else resolve(window.confirm(question));
+     });
+     if(!confirmed)return;
+     await call('ownerRevokeDevice',{locationId,deviceId:record.id});
+     await queryActiveDevice();
+     msg('Рабочий экран отозван. Теперь можно зарегистрировать новый.');
+    }catch(e){msg(e.message,true);}
+   }},'Отозвать потерянное устройство');
+   deviceActions.append(button);
+  };
+  choices.addEventListener('change',()=>{deviceInfo.textContent='Проверьте устройство для выбранной точки.';deviceActions.replaceChildren();});
+  box.append(element('h3',{},'Управление рабочим устройством'),deviceInfo,
+   element('button',{className:'outline',onclick:()=>queryActiveDevice().catch(e=>msg(e.message,true))},'Проверить подключение'),deviceActions);
   const revokeProof=element('textarea',{rows:3,placeholder:'Код kr1_ с рабочего экрана для отзыва'});
   box.append(element('details',{},element('summary',{},'Отвязать внешний QR-экран'),element('p',{},'На рабочем экране нажмите «Отвязать устройство». Код отзыва действует 60 секунд.'),revokeProof,
    element('button',{className:'outline',onclick:async()=>{try{await call('revokeKioskDevice',{proof:revokeProof.value.trim()});revokeProof.value='';msg('Рабочее устройство отозвано. Можно зарегистрировать замену.');}catch(e){msg(e.message,true);}}},'Подтвердить отзыв')));
