@@ -4,6 +4,7 @@ import {organizations,aiChatSettings,aiGatewaySettings,aiAnalysisProgress,aiMess
 import {analyzeNextBatch} from './ai-analyzer.js';
 import {analyzeOwnerPhoto} from './ai-vision.js';
 import {maybeSendCalibrationReview} from './ai-calibration.js';
+import {pendingChangedMessages} from './ai-dirty.js';
 
 const clock=()=>Math.floor(Date.now()/1000);
 const BATCH_SIZE=10,MIN_INTERVAL=15*60,PHOTO_BACKOFF=10*60;
@@ -59,8 +60,9 @@ export async function processObservedEvent(chatId,{force=false}={}){
   const page=await db.select().from(aiMessages)
    .where(and(eq(aiMessages.orgId,org.id),gt(aiMessages.id,cursor)))
    .orderBy(asc(aiMessages.id)).limit(BATCH_SIZE).all();
-  if(!page.length)return outcome;
-  const due=force||page.length===BATCH_SIZE||!progress?.lastAutoAttemptAt||
+  const dirty=await pendingChangedMessages(org.id,5);
+  if(!page.length&&!dirty.length)return outcome;
+  const due=force||page.length===BATCH_SIZE||dirty.length===5||!progress?.lastAutoAttemptAt||
    clock()-progress.lastAutoAttemptAt>=MIN_INTERVAL;
   if(!due)return outcome;
   if(progress)await db.update(aiAnalysisProgress).set({lastAutoAttemptAt:clock()})
