@@ -85,3 +85,48 @@ export const controlSubmissions=table('control_submissions',{
  status:text('status').notNull().default('pending'),comment:text('comment'),completedAt:integer('completed_at'),
  photos:json('photos')
 },t=>({recipient:uniqueIndex('uq_control_recipient').on(t.requestId,t.employeeId)}));
+
+
+// Business memory is opt-in per already bound work chat. The data stays tenant-scoped.
+export const aiChatSettings=table('ai_chat_settings',{
+ chatId:integer('chat_id').primaryKey(),orgId:integer('org_id').notNull(),
+ enabledAt:integer('enabled_at').notNull(),enabledBy:integer('enabled_by').notNull(),
+ active:integer('active').notNull().default(1)
+},t=>({org:index('idx_ai_settings_org').on(t.orgId)}));
+
+export const aiMessages=table('ai_messages',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),threadId:integer('thread_id'),
+ authorTgId:integer('author_tg_id'),senderChatId:integer('sender_chat_id'),
+ replyToMessageId:integer('reply_to_message_id'),sentAt:integer('sent_at').notNull(),
+ editedAt:integer('edited_at'),kind:text('kind').notNull(),
+ content:text('content').notNull().default(''),
+ fileId:text('file_id'),mediaGroupId:text('media_group_id'),
+ capturedAt:integer('captured_at').notNull()
+},t=>({unique:uniqueIndex('uq_ai_message_chat_id').on(t.chatId,t.messageId),
+ orgTime:index('idx_ai_msg_org_sent').on(t.orgId,t.sentAt)}));
+
+export const aiReactions=table('ai_reactions',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),actorKey:text('actor_key').notNull(),
+ reactions:json('reactions').notNull(),updatedAt:integer('updated_at').notNull()
+},t=>({unique:uniqueIndex('uq_ai_reaction_actor').on(t.chatId,t.messageId,t.actorKey)}));
+
+export const aiReactionTotals=table('ai_reaction_totals',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),reactions:json('reactions').notNull(),
+ updatedAt:integer('updated_at').notNull()
+},t=>({unique:uniqueIndex('uq_ai_reaction_total').on(t.chatId,t.messageId)}));
+
+export const aiFindings=table('ai_findings',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),title:text('title').notNull(),
+ statement:text('statement').notNull(),status:text('status').notNull().default('proposed'),
+ evidence:json('evidence').notNull(),periodStart:integer('period_start').notNull(),
+ periodEnd:integer('period_end').notNull(),
+ reviewedBy:integer('reviewed_by'),reviewedAt:integer('reviewed_at'),
+ correctedStatement:text('corrected_statement'),createdAt:integer('created_at').notNull()
+},t=>({review:index('idx_ai_findings_org_status').on(t.orgId,t.status)}));
