@@ -25,6 +25,7 @@ test('release scripts require preflight and safe migrations',()=>{
  assert.match(deploy,/migrate --dry-run --local/);
  assert.match(deploy,/migrate --local --safe/);
  assert.match(deploy,/SMENA_BACKUP_VERIFIED/);
+ assert.match(deploy,/SMENA_MIGRATION_REVIEWED/);
  assert.ok(deploy.indexOf('migrate --local --safe') < deploy.indexOf('"$TG" push'),'Apply safe additive migrations before publishing handlers');
  assert.match(deploy,/webhook sync/);
  assert.doesNotMatch(deploy,/--force|--drop-pending|--yes/);
