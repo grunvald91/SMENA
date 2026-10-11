@@ -101,19 +101,3 @@ export async function decideFinding(ownerTgId,id,action,correction=''){
  return {id:item.id,status};
 }
 
-/** Photos sent by this bot do NOT arrive through handlers/message.js. Register them
- * explicitly after Telegram confirms delivery, without changing the shift outcome. */
-export async function capturePublishedPhoto({orgId,chatId,messageId,employeeTgId,fileId,caption,at=clock()}){
- const config=await monitoredGroup(chatId);
- if(!config||config.orgId!==orgId||!Number.isSafeInteger(messageId)||!fileId)return false;
- await db.insert(aiMessages).values({
-  orgId,chatId,messageId,threadId:null,authorTgId:employeeTgId||null,
-  senderChatId:null,replyToMessageId:null,sentAt:at,editedAt:null,
-  kind:'photo',content:String(caption||'').slice(0,6000),fileId,
-  mediaGroupId:null,capturedAt:clock()
- }).onConflictDoUpdate({
-  target:[aiMessages.chatId,aiMessages.messageId],
-  set:{fileId,kind:'photo',content:String(caption||'').slice(0,6000)}
- }).run();
- return true;
-}
