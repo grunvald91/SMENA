@@ -12,7 +12,7 @@ export async function ensureCalibrationSchedule(orgId,startedAt){
  if(existing)return existing;
  await db.insert(aiCalibrationSchedules).values({
   orgId,dueAt:firstReviewDue(startedAt),busyUntil:0,claimToken:null
- }).onConflictDoNothing().run();
+ }).onConflictDoUpdate({target:aiCalibrationSchedules.orgId,set:{orgId}}).run();
  return db.select().from(aiCalibrationSchedules).where(eq(aiCalibrationSchedules.orgId,orgId)).get();
 }
 
