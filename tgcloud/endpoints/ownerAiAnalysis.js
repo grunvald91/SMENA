@@ -1,5 +1,5 @@
 import {actor,handleEndpoint} from '../lib/endpoint.js';
-import {configureAiGateway,aiProcessingStatus,analyzeNextBatch} from '../lib/ai-analyzer.js';
+import {configureAiGateway,aiProcessingStatus} from '../lib/ai-analyzer.js';
 import {allowOriginalPhotoTransfer} from '../lib/ai-vision.js';
 export default async function(input,ctx){
  return handleEndpoint(async()=>{
@@ -10,7 +10,6 @@ export default async function(input,ctx){
    return status;
   }
   if(input?.action==='disable')return configureAiGateway(who,null,false);
-  if(input?.action==='analyze')return analyzeNextBatch(who);
   return aiProcessingStatus(who);
  });
 }
