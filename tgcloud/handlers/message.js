@@ -3,6 +3,7 @@ import { DomainError } from '../lib/errors.js';
 import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,setLocationHours,createShiftTemplate,assignShift } from '../lib/service.js';
 import { rubles } from '../lib/payroll.js';
 import {captureWorkMessage,configureWorkChat,memoryStatus,prepareOwnerReview,decideFinding} from '../lib/ai-memory.js';
+import {evidenceUrl} from '../lib/ai-rules.js';
 import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
 function money(input){
@@ -85,7 +86,7 @@ export default async function(message){
    await reply(chat,lines.join('\n'));
    if(!result.findings.length){await reply(chat,'Пока недостаточно сообщений с распознаваемыми темами.');return;}
    for(const x of result.findings){
-    const sources=(x.evidence||[]).slice(0,3).map(e=>'Источник: чат '+e.chatId+', сообщение '+e.messageId);
+    const sources=(x.evidence||[]).slice(0,3).map(e=>'Источник: '+(evidenceUrl(e.chatId,e.messageId)||('чат '+e.chatId+', сообщение '+e.messageId)));
     const text=['#'+x.id+' · '+x.title, x.correctedStatement||x.statement, ...sources,
      'Для уточнения: /ai_correct '+x.id+' ваш правильный вариант'].join('\n');
     if(x.status!=='proposed'){await reply(chat,text+'\nСтатус: '+x.status);continue;}
