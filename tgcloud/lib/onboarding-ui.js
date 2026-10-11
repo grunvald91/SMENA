@@ -1,13 +1,14 @@
 // Bot API reply keyboards; no manual chat IDs.
 export const ONBOARDING_BUTTONS=Object.freeze({
  create:'🏢 Создать бизнес',businesses:'🏬 Мои бизнесы',group:'💬 Подключить группу',team:'👥 Сотрудники',
+ invite:'🔗 Пригласить сотрудника',requests:'📥 Заявки сотрудников',
  report:'📊 Отчёт',dashboard:'📱 Кабинет',cancel:'↩️ Отмена',
  chooseChat:'✅ Выбрать рабочую группу'
 });
 const B=ONBOARDING_BUTTONS;
 export function mainKeyboard(hasBusiness,{hasMembership=false,canCreate=false}={}){
  const rows=hasBusiness
-  ? [[{text:B.group}],[{text:B.team},{text:B.report}],[{text:B.dashboard}]]
+  ? [[{text:B.group}],[{text:B.team},{text:B.report}],[{text:B.invite},{text:B.requests}],[{text:B.dashboard}]]
   : hasMembership?[[{text:B.dashboard}]]:[[{text:B.create}]];
  if(hasMembership)rows.push([{text:B.businesses}]);
  if(!hasBusiness&&hasMembership&&canCreate)rows.push([{text:B.create}]);
@@ -46,4 +47,21 @@ export function matchOrganizationChoice(label,grants){
  if(typeof label!=='string'||!Array.isArray(grants))return null;
  const index=grants.findIndex((grant,i)=>businessChoiceLabel(grant,i)===label);
  return index<0?null:grants[index];
+}
+
+export function employeeApprovalKeyboard(requests){
+ if(!Array.isArray(requests)||requests.length>10)throw new Error('Неверное количество заявок');
+ const rows=requests.map(r=>{
+  if(!Number.isSafeInteger(r.id)||r.id<=0)throw new Error('Неверный номер заявки');
+  return [{text:`✅ Принять №${r.id}`},{text:`❌ Отклонить №${r.id}`}];
+ });
+ rows.push([{text:B.cancel}]);
+ return {keyboard:rows,resize_keyboard:true,one_time_keyboard:true};
+}
+export function parseEmployeeApprovalChoice(value){
+ if(typeof value!=='string')return null;
+ const m=/^(✅ Принять|❌ Отклонить) №([1-9][0-9]{0,12})$/.exec(value);
+ if(!m)return null;
+ const requestId=Number(m[2]);
+ return Number.isSafeInteger(requestId)?{requestId,approve:m[1].startsWith('✅')}:null;
 }
