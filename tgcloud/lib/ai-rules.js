@@ -4,13 +4,16 @@ export function normalizeWorkMessage(message,at=Math.floor(Date.now()/1000)){
  if(!message?.chat?.id||!Number.isSafeInteger(message.message_id))return null;
  const file=message.photo?.at(-1)?.file_id||message.document?.file_id||message.video?.file_id||message.voice?.file_id||message.audio?.file_id||message.animation?.file_id||message.video_note?.file_id||message.sticker?.file_id||null;
  const kind=message.photo?'photo':message.document?'document':message.voice?'voice':message.video?'video':message.audio?'audio':message.animation?'animation':message.video_note?'video_note':message.sticker?'sticker':'text';
+ const media=message.document||message.video||message.voice||message.audio||message.animation||message.video_note||message.sticker||message.photo?.at(-1)||null;
  return {chatId:message.chat.id,messageId:message.message_id,
   threadId:message.message_thread_id||null,authorTgId:message.from?.id||null,
   senderChatId:message.sender_chat?.id||null,replyToMessageId:message.reply_to_message?.message_id||null,
   sentAt:Number.isFinite(message.date)?message.date:at,
   editedAt:Number.isFinite(message.edit_date)?message.edit_date:null,
   kind,content:cap(message.text||message.caption||''),
-  fileId:file,mediaGroupId:message.media_group_id||null,capturedAt:at};
+  fileId:file,mediaGroupId:message.media_group_id||null,
+  mimeType:media?.mime_type||null,fileName:media?.file_name||null,
+  fileSize:Number.isSafeInteger(media?.file_size)?media.file_size:null,capturedAt:at};
 }
 export function normalizeReactions(values){
  return (Array.isArray(values)?values:[]).slice(0,30).map(x=>{
