@@ -109,11 +109,12 @@ export async function completeControl(tgId,submissionId,photos,comment){
  const at=now(),reserved=await db.update(controlSubmissions).set({status:'uploading',comment:note}).where(and(eq(controlSubmissions.id,sub.id),eq(controlSubmissions.status,'pending'))).run();
  requireInput(reserved.rowsAffected===1,'IN_PROGRESS','Фотографии уже отправляются');
  const caption=controlCaption({request,employee:person.name,location:loc.name,timezone:org.timezone,at,comment:note});
+ let saved=[];
  try{
   const reply=request.messageId?{reply_parameters:{message_id:request.messageId,allow_sending_without_reply:true}}:{};
   const files=bytes.map((b,i)=>new InputFile(b,`control-${i+1}.jpg`,{type:'image/jpeg'}));
   const messages=files.length===1?[await api.sendPhoto({chat_id:loc.chatId,photo:files[0],caption,...reply})]:await api.sendMediaGroup({chat_id:loc.chatId,media:files.map((file,i)=>({type:'photo',media:file,...(i===0?{caption}:{})})),...reply});
-  const saved=messages.map(m=>({messageId:m.message_id,fileId:m.photo?.at(-1)?.file_id}));
+  saved=messages.map(m=>({messageId:m.message_id,fileId:m.photo?.at(-1)?.file_id}));
   requireInput(saved.length===files.length&&saved.every(m=>m.messageId&&m.fileId),'TELEGRAM_PHOTO','Telegram не подтвердил все фотографии');
   await db.update(controlSubmissions).set({status:'done',completedAt:at,photos:saved}).where(eq(controlSubmissions.id,sub.id)).run();
  }catch(e){
