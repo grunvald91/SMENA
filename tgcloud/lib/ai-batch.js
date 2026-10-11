@@ -40,7 +40,9 @@ export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNa
  });
  const memory=(Array.isArray(confirmed)?confirmed:[]).filter(m=>['confirmed','corrected'].includes(m.status))
   .slice(-25).map(x=>scrub(x.correctedStatement||x.statement||''));
- return {payload:{version:1,mode:'work_chat',messages:output,confirmedMemory:memory},sourceMap};
+ const rejected=(Array.isArray(confirmed)?confirmed:[]).filter(m=>m.status==='rejected')
+  .slice(-15).map(x=>scrub(x.statement||''));
+ return {payload:{version:1,mode:'work_chat',messages:output,confirmedMemory:memory,rejectedMemory:rejected},sourceMap};
 }
 
 export function groundBatchFindings(untrusted,sourceMap){
