@@ -1,6 +1,6 @@
 import {db} from 'sdk';
 import {eq,and,gt,asc,inArray,desc,lte} from 'sdk/db';
-import {aiMessages,aiReactions,aiFindings,aiGatewaySettings,aiAnalysisProgress,aiChatSettings,employees} from '../schema.js';
+import {aiMessages,aiReactions,aiFindings,aiGatewaySettings,aiAnalysisProgress,aiChatSettings,employees,aiParticipants} from '../schema.js';
 import {requireOwner} from './service.js';
 import {requireInput} from './errors.js';
 import {nonce} from './security.js';
@@ -64,7 +64,18 @@ export async function analyzeNextBatch(ownerTgId){
   const ids=messages.map(x=>x.messageId);
   const reactions=await db.select().from(aiReactions).where(and(eq(aiReactions.orgId,org.id),inArray(aiReactions.messageId,ids))).limit(400).all();
   const team=await db.select().from(employees).where(eq(employees.orgId,org.id)).limit(200).all();
-  const {payload,sourceMap}=buildPrivateBatch(messages,{confirmed,reactions:reactions.filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),employeeNames:team.map(x=>x.name)});
+  // Actor keys are retained only inside ServGo. The provider sees stable random aliases.
+  const keys=[...new Set(messages.map(m=>m.authorTgId?'u:'+m.authorTgId:m.senderChatId?'c:'+m.senderChatId:null).filter(Boolean))];
+  const actorAliases={};
+  for(const key of keys){
+   await db.insert(aiParticipants).values({orgId:org.id,actorKey:key,alias:'участник-'+nonce(8)})
+    .onConflictDoUpdate({target:[aiParticipants.orgId,aiParticipants.actorKey],set:{orgId:org.id}}).run();
+  }
+  if(keys.length){
+   const pseudonyms=await db.select().from(aiParticipants).where(and(eq(aiParticipants.orgId,org.id),inArray(aiParticipants.actorKey,keys))).all();
+   for(const p of pseudonyms)actorAliases[p.actorKey]=p.alias;
+  }
+  const {payload,sourceMap}=buildPrivateBatch(messages,{confirmed,reactions:reactions.filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),employeeNames:team.map(x=>x.name),actorAliases});
   const response=await callServGoAiGateway(config.capability,payload);
   const candidates=groundBatchFindings(response.findings,sourceMap);
   let proposed=0;
