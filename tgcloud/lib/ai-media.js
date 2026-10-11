@@ -1,6 +1,7 @@
 import {db} from 'sdk';
 import {eq,and} from 'sdk/db';
 import {aiChatSettings,aiMessages} from '../schema.js';
+import {enqueueMedia} from './ai-media-queue.js';
 const clock=()=>Math.floor(Date.now()/1000);
 // Photos emitted by this bot are not delivered to the message handler.
 export async function capturePublishedPhoto({orgId,chatId,messageId,employeeTgId,fileId,caption,at=clock()}){
