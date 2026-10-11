@@ -116,3 +116,20 @@ export const onboardingSessions=table('onboarding_sessions',{
  expiresAt:integer('expires_at').notNull(),
  updatedAt:integer('updated_at').notNull()
 });
+
+// Shareable, time-limited Telegram invitations. Tokens are cryptographically random.
+export const employeeJoinInvites=table('employee_join_invites',{
+ token:text('token').primaryKey(),orgId:integer('org_id').notNull(),
+ createdBy:integer('created_by').notNull(),createdAt:integer('created_at').notNull(),
+ expiresAt:integer('expires_at').notNull(),revokedAt:integer('revoked_at')
+},t=>({org:index('idx_join_invite_org').on(t.orgId)}));
+export const employeeJoinRequests=table('employee_join_requests',{
+ id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),
+ userTgId:integer('user_tg_id').notNull(),name:text('name').notNull().default(''),
+ status:text('status').notNull().default('draft'),
+ createdAt:integer('created_at').notNull(),updatedAt:integer('updated_at').notNull(),
+ reviewedBy:integer('reviewed_by'),reviewedAt:integer('reviewed_at')
+},t=>({
+ uniq:uniqueIndex('uq_join_org_user').on(t.orgId,t.userTgId),
+ pending:index('idx_join_org_status').on(t.orgId,t.status)
+}));
