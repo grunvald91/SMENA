@@ -53,14 +53,14 @@ export async function analyzeNextBatch(ownerTgId){
    .orderBy(asc(aiMessages.id)).limit(60-dirty.length).all();
   if(!page.length&&!dirty.length)return {processed:0,proposed:0,remaining:false};
   const authorized=new Set(enabled.map(c=>c.chatId));
-  const changed=[];
+  const changedMessages=[];
   for(const event of dirty){
    const message=await db.select().from(aiMessages).where(and(eq(aiMessages.orgId,org.id),
     eq(aiMessages.chatId,event.chatId),eq(aiMessages.messageId,event.messageId))).get();
-   if(message)changed.push(message);
+   if(message)changedMessages.push(message);
   }
   const unique=new Map();
-  for(const m of [...page,...changed])if(authorized.has(m.chatId))unique.set(m.id,m);
+  for(const m of [...page,...changedMessages])if(authorized.has(m.chatId))unique.set(m.id,m);
   const messages=[...unique.values()];
   const lastId=page.at(-1)?.id||progress.cursorId;
   if(!messages.length){
