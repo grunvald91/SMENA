@@ -1,5 +1,5 @@
 import {db} from 'sdk';
-import {eq,and,gte,lte,desc} from 'sdk/db';
+import {eq,and,gte,lte,desc,inArray} from 'sdk/db';
 import {locations,aiChatSettings,aiMessages,aiReactions,aiReactionTotals,aiFindings} from '../schema.js';
 import {requireOwner} from './service.js';
 import {requireInput} from './errors.js';
@@ -104,7 +104,7 @@ export async function prepareOwnerReview(ownerTgId,days=14){
   created.push(finding);
  }
  const modelFindings=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),
-  eq(aiFindings.origin,'model'),gte(aiFindings.periodEnd,start),lte(aiFindings.periodStart,end)))
+  inArray(aiFindings.origin,['model','vision']),gte(aiFindings.periodEnd,start),lte(aiFindings.periodStart,end)))
   .orderBy(desc(aiFindings.createdAt)).limit(30).all();
  return {days,groups:settings.length,messages:usable.length,limitReached:records.length===2000,
   reactionSampleLimited:perActor.length===2000||anonymous.length===2000,
