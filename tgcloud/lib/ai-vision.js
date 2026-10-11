@@ -15,7 +15,7 @@ export async function allowOriginalPhotoTransfer(ownerId,allowed){
  const org=await requireOwner(ownerId);
  const cfg=await db.select().from(aiGatewaySettings).where(eq(aiGatewaySettings.orgId,org.id)).get();
  requireInput(!!cfg,'AI_NOT_CONFIGURED','Сначала подключите ИИ-шлюз');
- await db.update(aiGatewaySettings).set({allowOriginalPhotos:allowed?1:0}).where(eq(aiGatewaySettings.orgId,org.id)).run();
+ await db.update(aiGatewaySettings).set({allowOriginalPhotos:allowed?1:0,allowOriginalFiles:allowed?1:0}).where(eq(aiGatewaySettings.orgId,org.id)).run();
  return {allowed:!!allowed};
 }
 
