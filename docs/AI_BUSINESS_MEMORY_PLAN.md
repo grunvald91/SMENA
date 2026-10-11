@@ -12,7 +12,7 @@ All collection is **opt in** per bound chat, and ownership is checked in backend
 | --- | --- | --- |
 | A. Evidence collection | chat opt-in, group messages (including media file IDs), edited messages, user/anonymous reactions, bot-created photo references; dedupe | Implemented in branch; platform tests pending |
 | B. Owner calibration | topic candidates, emoji meanings, 7/14 day review in private chat, confirm/reject/correct, provenance | Initial deterministic implementation in branch; not LLM-generated |
-| C. Provider bridge | secured secrets outside source/repo, outbound API through privacy policy, strict grounded JSON hypotheses, retry/idempotency | Contract only; no provider connected |
+| C. Provider bridge | private gateway, upstream provider API, secure limited capability, grounded hypotheses, retry/idempotency and owner configuration | Implemented in source; gateway not deployed and upstream API not tested |
 | D. Photo understanding | getFileContent, optional local redaction, authorized fallback to original image, visual checklists, evidence and failure classification | Selection contract only; no provider connected |
 | E. Operational assistant | read-only tools for shifts, payroll previews, follow-up tasks, source links, permissions | Existing shift domain functions available; AI tools not connected |
 | F. Reliability and release | tests, data protection decision, migrations, webhook sync, real Android/iOS validation, measured API cost | Pending |
@@ -59,3 +59,11 @@ All collection is **opt in** per bound chat, and ownership is checked in backend
 ## Known gaps before calling this a complete AI assistant
 
 The current review is a deterministic topic discovery prototype, not genuine model-driven business analysis. No external model invocation, automated 14-day schedule, image interpretation, evidence hyperlink UI, full chat search, retroactive edited/reaction reconciliation, voice transcription, model-cost tracking, incident tracking, dashboard cards, granular management roles, or payroll correction workflow is implemented yet. There is a 2000-message sampling cap in on-demand reviews, not a cap on event ingestion. These remain explicit follow-up tasks, not claimed functionality.
+
+## Phase C update — model integration source (2026-10-11)
+
+Added `tgcloud/lib/ai-batch.js`, `ai-gateway.js`, `ai-analyzer.js`, `tgcloud/endpoints/ownerAiAnalysis.js`, `gateway/server.mjs`, and Mini App owner settings. Actual OpenAI-compatible chat-completion requests are implemented by the separately deployed gateway. Gateway runs with model API keys in VPS environment; Telegram DB stores only a limited revocable capability. `https://ai.servgo.ru/v1/analyze` is the intended HTTPS endpoint, not verified live. See `gateway/README.md`.
+
+A batch is at most 60 messages with stable, pseudonymous participant aliases, bounded/filtered text, existing confirmed/corrected memory, reply links and emoji reactions. The model returns hypothetical claims citing opaque `m1`–`m60` references. Actual source IDs are restored exclusively inside ServGo, reviewed by the owner in private chat. Tenant-scoped analysis progress is leased and retriable; deterministic batch keys avoid most duplicate findings. Model errors must not affect QR, photographs or payroll.
+
+**Important deployment gate:** No real provider credentials, TLS for the planned gateway, safe migrations or end-to-end platform checks were available in this coding turn; no production deployment is claimed. The gateway must be provisioned and tested on synthetic data in Codespaces/VPS before publishing any of these changes. No Actions.
