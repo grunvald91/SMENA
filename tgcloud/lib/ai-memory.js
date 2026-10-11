@@ -21,7 +21,7 @@ export async function configureWorkChat(ownerTgId,chatId,enabled){
  return {active:!!enabled,point:point.name};
 }
 export async function captureWorkMessage(message,{edited=false}={}){
- if(!['group','supergroup'].includes(message?.chat?.type)||message?.from?.is_bot)return false;
+ if(!['group','supergroup'].includes(message?.chat?.type))return false;
  const config=await monitoredGroup(message.chat.id);
  if(!config)return false;
  const row=normalizeWorkMessage(message);if(!row)return false;
