@@ -32,6 +32,7 @@ export async function captureWorkMessage(message,{edited=false}={}){
  await db.insert(aiMessages).values(values).onConflictDoUpdate({
   target:[aiMessages.chatId,aiMessages.messageId],
   set:{content:values.content,kind:values.kind,fileId:values.fileId,editedAt:values.editedAt,
+   mimeType:values.mimeType,fileName:values.fileName,fileSize:values.fileSize,
    replyToMessageId:values.replyToMessageId,threadId:values.threadId}
  }).run();
  if(values.fileId)await enqueueMedia(values.chatId,values.messageId);
