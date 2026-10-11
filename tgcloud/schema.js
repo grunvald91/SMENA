@@ -148,7 +148,8 @@ export const aiAnalysisProgress=table('ai_analysis_progress',{
  cursorId:integer('cursor_id').notNull().default(0),
  busyUntil:integer('busy_until').notNull().default(0),
  lockToken:text('lock_token'),
- updatedAt:integer('updated_at').notNull()
+ updatedAt:integer('updated_at').notNull(),
+ lastAutoAttemptAt:integer('last_auto_attempt_at').notNull().default(0)
 });
 
 
