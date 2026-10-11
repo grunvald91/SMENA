@@ -107,3 +107,12 @@ export const userOrganizationSelections=table('user_organization_selections',{
  orgId:integer('org_id').notNull(),
  updatedAt:integer('updated_at').notNull()
 });
+
+ // One active onboarding dialogue for each Telegram user. Never trust chat_shared without matching request ID.
+export const onboardingSessions=table('onboarding_sessions',{
+ userTgId:integer('user_tg_id').primaryKey(),
+ phase:text('phase').notNull(),
+ requestId:integer('request_id'),
+ expiresAt:integer('expires_at').notNull(),
+ updatedAt:integer('updated_at').notNull()
+});
