@@ -44,6 +44,12 @@ with tempfile.TemporaryDirectory() as temp:
                 continue
             db.execute('ALTER TABLE "'+t['name']+'" ADD COLUMN '+column(c,True))
             if c.get('distinct'): db.execute('CREATE UNIQUE INDEX "rehearsal_'+t['name']+'_'+c['name']+'" ON "'+t['name']+'" ("'+c['name']+'")')
+        prior_indexes={i['name']:i for i in previous['indexes']}
+        for i in t['indexes']:
+            if i['name'] in prior_indexes:
+                assert i==prior_indexes[i['name']], ('changed legacy index',t['name'],i['name'])
+                continue
+            db.execute('CREATE '+('UNIQUE ' if i['unique'] else '')+'INDEX "'+i['name']+'" ON "'+t['name']+'" ('+','.join('"'+c+'"' for c in i['cols'])+')'+(' WHERE '+i['condition'] if 'condition' in i else ''))
     for t in old:
         selected=','.join('"'+c['name']+'"' for c in t['columns'])
         assert db.execute('SELECT '+selected+' FROM "'+t['name']+'"').fetchall()==before[t['name']]

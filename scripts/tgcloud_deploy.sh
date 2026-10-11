@@ -37,6 +37,7 @@ echo "Так действующий бот продолжит работать, 
 
 echo "Проверяем остаточные несовпадения схемы перед выкладкой кода..."
 "$TG" migrate --dry-run --local
+node scripts/tgcloud_finish_migration.mjs
 
 echo "Публикуем серверные модули и собранный Mini App..."
 "$TG" push

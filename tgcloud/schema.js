@@ -44,20 +44,23 @@ export const shifts=table('shifts',{
  sourceIn:text('source_in').notNull(),sourceOut:text('source_out'),createdAt:integer('created_at').notNull(),
  plannedStartAt:integer('planned_start_at'),plannedEndAt:integer('planned_end_at'),closeGraceMinutes:integer('close_grace_minutes'),closeComment:text('close_comment'),
  templateId:integer('template_id'),assignmentId:integer('assignment_id'),
- arrivalIntentId:text('arrival_intent_id').unique(),departureIntentId:text('departure_intent_id').unique(),
- occurrenceKey:text('occurrence_key').unique()
+ arrivalIntentId:text('arrival_intent_id'),departureIntentId:text('departure_intent_id'),
+ occurrenceKey:text('occurrence_key')
 },t=>({employee:index('idx_shifts_employee_start').on(t.employeeId,t.startedAt),
- open:uniqueIndex('uq_employee_open_shift').on(t.employeeId).where(sql`ended_at IS NULL`)}));
+ open:uniqueIndex('uq_employee_open_shift').on(t.employeeId).where(sql`ended_at IS NULL`),
+ arrival:uniqueIndex('uq_shift_arrival_intent').on(t.arrivalIntentId),
+ departure:uniqueIndex('uq_shift_departure_intent').on(t.departureIntentId),
+ occurrence:uniqueIndex('uq_shift_occurrence').on(t.occurrenceKey)}));
 export const shiftEvents=table('shift_events',{
  id:integer('id').primaryKey({autoIncrement:true}),shiftId:integer('shift_id').notNull(),actorTgId:integer('actor_tg_id').notNull(),
  action:text('action').notNull(),at:integer('at').notNull(),qrToken:text('qr_token'),photoFileId:text('photo_file_id'),note:text('note'),
- photoIntentId:text('photo_intent_id').unique()
-},t=>({shift:index('idx_events_shift').on(t.shiftId)}));
+ photoIntentId:text('photo_intent_id')
+},t=>({shift:index('idx_events_shift').on(t.shiftId),photo:uniqueIndex('uq_event_photo_intent').on(t.photoIntentId)}));
 export const bonuses=table('bonuses',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),employeeId:integer('employee_id').notNull(),
  date:text('date').notNull(),amountKopeks:integer('amount_kopeks').notNull(),reason:text('reason').notNull(),
- actorTgId:integer('actor_tg_id').notNull(),operationId:text('operation_id').unique()
-},t=>({period:index('idx_bonuses_period').on(t.orgId,t.date)}));
+ actorTgId:integer('actor_tg_id').notNull(),operationId:text('operation_id')
+},t=>({period:index('idx_bonuses_period').on(t.orgId,t.date),operation:uniqueIndex('uq_bonus_operation').on(t.operationId)}));
 export const auditLog=table('audit_log',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),actorTgId:integer('actor_tg_id').notNull(),
  action:text('action').notNull(),refId:text('ref_id'),data:json('data'),at:integer('at').notNull()
