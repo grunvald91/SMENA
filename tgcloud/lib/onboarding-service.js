@@ -70,7 +70,7 @@ export async function finishGroupOnboarding(tgId,sharedChat){
  }
  requireInput(['group','supergroup'].includes(chat?.type),'BAD_CHAT','Можно выбрать только рабочую группу, не канал');
  requireInput(isAdministrator(ownerMember?.status),'GROUP_ADMIN_REQUIRED','Подключить группу может только её администратор');
- requireInput(canBotPostPhoto(botMember),'BOT_CANNOT_POST','Разрешите боту отправлять фотографии в группе');
+ requireInput(canBotPostPhoto(botMember,chat),'BOT_CANNOT_POST','Разрешите боту отправлять фотографии в группе');
  const location=await bindChat(tgId,chatId,(chat.title||sharedChat.title||'Рабочая точка').trim());
  await cancelOnboarding(tgId);
  return location;
