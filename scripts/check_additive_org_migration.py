@@ -43,6 +43,28 @@ CREATE TABLE onboarding_sessions (
  expires_at INTEGER NOT NULL,
  updated_at INTEGER NOT NULL
 );
+CREATE TABLE employee_join_invites (
+ token TEXT PRIMARY KEY,
+ org_id INTEGER NOT NULL,
+ created_by INTEGER NOT NULL,
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ revoked_at INTEGER
+);
+CREATE INDEX idx_join_invite_org ON employee_join_invites (org_id);
+CREATE TABLE employee_join_requests (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ org_id INTEGER NOT NULL,
+ user_tg_id INTEGER NOT NULL,
+ name TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'draft',
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ reviewed_by INTEGER,
+ reviewed_at INTEGER
+);
+CREATE UNIQUE INDEX uq_join_org_user ON employee_join_requests (org_id,user_tg_id);
+CREATE INDEX idx_join_org_status ON employee_join_requests (org_id,status);
 """
 
 def initialize(db):
@@ -89,6 +111,17 @@ def initialize(db):
         pass
     else:
         raise AssertionError("Duplicate onboarding session accepted")
+    db.execute("INSERT INTO employee_join_invites (token,org_id,created_by,created_at,expires_at) VALUES (?,?,?,?,?)",
+               ("token-for-test",42,7654321,1000,11000))
+    db.execute("INSERT INTO employee_join_requests (org_id,user_tg_id,name,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+               (42,7654322,"Иван","pending",1000,1000))
+    try:
+        db.execute("INSERT INTO employee_join_requests (org_id,user_tg_id,name,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                   (42,7654322,"Иван","pending",1000,1000))
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError("Duplicate employee invitation accepted")
     assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     db.commit()
 
