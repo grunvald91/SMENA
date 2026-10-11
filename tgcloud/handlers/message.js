@@ -42,7 +42,7 @@ async function reply(chatId,message,markup=null) {
 }
 async function sendOnboardingMenu(tgId,chat) {
  const org=await ownerOrg(tgId);
- await reply(chat,org?`🏢 ${org.name}\\nВыберите, что нужно сделать:`:'Добро пожаловать в ServGo Смена! Сначала создадим ваш бизнес.',mainKeyboard(!!org));
+ await reply(chat,org?`🏢 ${org.name}\nВыберите, что нужно сделать:`:'Добро пожаловать в ServGo Смена! Сначала создадим ваш бизнес.',mainKeyboard(!!org));
 }
 
 export default async function(message){
@@ -67,7 +67,7 @@ export default async function(message){
    }
    if(plain===OB.team){
     const staff=await listEmployees(tgId);
-    await reply(chat,staff.length?staff.map(x=>`${x.name} — ${rubles(x.hourlyKopeks)}/ч`).join('\\n'):'Сотрудников пока нет. Для добавления откройте кабинет Смены.',mainKeyboard(true));return;
+    await reply(chat,staff.length?staff.map(x=>`${x.name} — ${rubles(x.hourlyKopeks)}/ч`).join('\n'):'Сотрудников пока нет. Для добавления откройте кабинет Смены.',mainKeyboard(true));return;
    }
    if(plain===OB.report){await reply(chat,formatReport(await makeReport(tgId,[])),mainKeyboard(true));return;}
    if(plain===OB.dashboard){
