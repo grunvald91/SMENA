@@ -16,8 +16,8 @@ export async function ensureCalibrationSchedule(orgId,startedAt){
  return db.select().from(aiCalibrationSchedules).where(eq(aiCalibrationSchedules.orgId,orgId)).get();
 }
 
-function digest(report){
- const lines=['🧠 ServGo — первая проверка понимания бизнеса',
+function digest(report,isFirst){
+ const lines=[isFirst?'🧠 ServGo — первая проверка понимания бизнеса':'🧠 ServGo — обновление понимания бизнеса',
   'Период: 14 дней. Сообщений в выборке: '+report.messages+'.',
   'Гипотез ИИ: '+(report.modelFindings||0)+'.'];
  if(!report.fullPeriod)lines.push('⚠️ История наблюдений ещё короче 14 дней. Выводы предварительные.');
@@ -49,7 +49,7 @@ export async function maybeSendCalibrationReview(chatId){
  if(reserved.rowsAffected!==1)return false;
  try{
   const overview=await prepareOwnerReview(org.ownerTgId,FIRST_REVIEW_DAYS);
-  await api.sendMessage({chat_id:org.ownerTgId,text:digest(overview)});
+  await api.sendMessage({chat_id:org.ownerTgId,text:digest(overview,!schedule.lastSentAt)});
   await db.update(aiCalibrationSchedules).set({lastSentAt:clock(),busyUntil:0,claimToken:null})
    .where(eq(aiCalibrationSchedules.orgId,config.orgId)).run();
   return true;
