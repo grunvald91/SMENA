@@ -10,6 +10,6 @@
 
 1. `npm ci && npm run check && npm run build && npm run build:kiosk` в Codespaces.
 2. Резервная копия базы и **проверка восстановления**. Если восстановление невозможно проверить — не применять опасные миграции.
-3. `tgcloud migrate --dry-run --local` должен показывать только CREATE TABLE новых таблиц/индексов `organization_memberships` и `user_organization_selections`. Удаление UNIQUE, ALTER существующих таблиц, удаление данных — блокер.
+3. `tgcloud migrate --dry-run --local` должен показывать только CREATE TABLE новых таблиц/индексов `organization_memberships`, `user_organization_selections` и `onboarding_sessions`. Удаление UNIQUE, ALTER существующих таблиц, удаление данных — блокер.
 4. Под отдельным тестовым Telegram пользователем проверить: единственная организация выбирается; две требуют выбора; manager имеет доступ только к своей организации; чужие или отозванные членства отклоняются; старые команды и QR работают без изменений.
 5. Вся работа до реальной проверки — только отдельная ветка/PR. GitHub Actions не использовать. Прямая связь Serverless→ServGo VPS не добавляется.
