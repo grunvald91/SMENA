@@ -88,7 +88,7 @@ export function createGatewayHandler({env=process.env,fetchImpl=fetch}={}){
    return send(200,outcome);
   }catch(err){
    // NEVER log request text, authorization headers, upstream credentials or model output.
-   console.error('gateway failed',String(err?.message||'unknown').replace(/https?:[^\s]+/g,'[URL]'));
+   console.error('gateway failed',/^PROVIDER_(HTTP_\\d+|UNCONFIGURED|CONTENT_MISSING|RESPONSE_TOO_LARGE)$/.test(String(err?.message))?err.message:'UPSTREAM_FAILURE');
    return send(502,{error:'AI_UNAVAILABLE'});
   }
  };
