@@ -460,23 +460,6 @@ export async function findProblems(tgId,stamp=Date.now()) {
  const org=await requireOwner(tgId),todayMs=startOfLocalDay(formatDate(stamp,org.timezone),org.timezone);
  const people=await db.select().from(employees).where(eq(employees.orgId,org.id)).all();
  const pending=await db.select().from(shifts).where(and(eq(shifts.orgId,org.id),isNull(shifts.endedAt),lt(shifts.startedAt,Math.floor(todayMs/1000)))).orderBy(desc(shifts.startedAt)).limit(100).all();
- return pending.map(s=>({shiftId:s.id,employeeId:s.employeeId,name:people.find(e=>e.id===s.employeeId)?.name||'Неизвестный сотрудник',startedAt:s.startedAt}));
+ return pending.map(s=>({shiftId:s.id,employeeId:s.employeeId,name:people.find(e=>e.id===s.employeeId)?.name||'Неизвестный сотрудник',startedAt:s.startedAt,timezone:org.timezone}));
 }
-export function formatReport(r){
- let lines=[`📊 ServGo Смена — предварительное начисление`, `Период: ${r.period.start} — до ${r.period.endExclusive} (не включая)`, `Часовой пояс: ${r.period.tz}`,''];
- for(const e of r.entries){lines.push(`${e.name}: ${e.hours} ч × ставка = ${rubles(e.baseKopeks)}; надбавки ${rubles(e.bonusKopeks)}; итого ${rubles(e.grossKopeks)}${e.unclosed?' ⚠️ незакрытых смен: '+e.unclosed:''}`);}
- if(r.exceptions?.length){
-  lines.push('',`📝 Отклонения от графика (${r.exceptions.length}):`);
-  for(const item of r.exceptions){
-   const when=sec=>new Date(sec*1000).toLocaleString('ru-RU',{timeZone:r.period.tz,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-   lines.push(`#${item.shiftId} ${item.name}: ${item.status==='early'?'раньше':'позже'} на ${Math.abs(item.differenceMinutes)} мин; план ${when(item.plannedEndAt)}, факт ${when(item.endedAt)}. Причина: ${item.closeComment||'⚠️ не указана'}`);
-  }
- }
- if(r.missingAssignments?.length){
-  lines.push('',`⚠️ Не отмечены назначенные смены (${r.missingAssignments.length}):`);
-  for(const a of r.missingAssignments)lines.push(`${a.workDate} · ${a.name} · ${a.templateName} (нет отметки о приходе)`);
- }
- lines.push('',`Всего: ${rubles(r.totals.grossKopeks)}; незакрытых смен: ${r.totals.unclosed}`,
-  'Без НДФЛ, других удержаний, коэффициентов и юридического расчёта зарплаты. Требуется проверка бухгалтером.');
- return lines.join('\n');
-}
+export {formatReport} from './report-format.js';

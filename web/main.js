@@ -4,6 +4,7 @@ import {isShiftToken} from '../tgcloud/lib/kiosk-token.js';
 import {startTelegramQrScan} from './qr-scan.js';
 import {capturePortrait} from './portrait.js';
 import {createControlUI} from './control.js';
+import {reportDate,reportMoment,reportRange} from '../tgcloud/lib/report-format.js';
 const T=window.Telegram?.WebApp;
 const root=document.getElementById('root');
 const state={context:null,device:null,displayTimer:null,issuing:false,stopCamera:null};
@@ -163,7 +164,7 @@ async function showCamera(intent){
 }
 // Owner-only data is served by authenticated Telegram Serverless endpoints.
 const currency=kopeks=>(Number(kopeks||0)/100).toLocaleString('ru-RU',{style:'currency',currency:'RUB'});
-const dateOnly=seconds=>new Date(seconds*1000).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const dateOnly=(seconds,timezone)=>reportMoment(seconds,timezone||state.context?.owner?.timezone||'Europe/Moscow');
 function ui(tag,props={},...children){return element(tag,props,...children);}
 function textField(label,type='text',value=''){
  const input=ui('input',{type,value});return {input,field:ui('label',{className:'field'},ui('span',{},label),input)};
@@ -183,7 +184,7 @@ function dashboardOverviewPanel(d){
  const rows=d.preview.entries;
  const cards=ui('div',{className:'stats-grid'},
    statisticsCard('Отработано',d.summary.workedHours+' ч'),
-   statisticsCard('Начисления',currency(d.summary.grossKopeks),'До удержаний'),
+   statisticsCard('Начисления',currency(d.summary.grossKopeks)),
    statisticsCard('Смен по графику',d.summary.scheduled),
    statisticsCard('Требуют проверки',d.summary.missing+d.summary.unclosed+d.summary.deviations));
  const warnings=[];
@@ -193,7 +194,7 @@ function dashboardOverviewPanel(d){
  return ui('div',{className:'dashboard-stack'},
   sectionTitle('Обзор','Фактические данные за выбранный месяц.'),cards,
   warnings.length?ui('div',{className:'notice warning'},'Внимание: '+warnings.join(' · ')):ui('div',{className:'notice'},'Нет обнаруженных отклонений в выбранном периоде.'),
-  ui('section',{className:'panel'},sectionTitle('Предварительные начисления'),
+  ui('section',{className:'panel'},sectionTitle('Начисления'),
    rows.length?table(['Сотрудник','Часы','Начислено','Незакрыто'],rows.map(e=>[e.name,e.hours,currency(e.grossKopeks),e.unclosed||'—'])):ui('p',{className:'muted'},'Сотрудников пока нет.')));
 }
 function makeSelect(label,items,placeholder='Выберите'){
@@ -232,10 +233,10 @@ function dashboardSchedulePanel(d){
   }},'Изменить')
  ]));
  const rosterTable=table(['Дата','Сотрудник','Смена','Состояние','Действие'],d.assignments.map(a=>[
-  a.workDate,lookup(d.employees,a.employeeId)?.name||a.employeeId,a.templateName,
+  reportDate(a.workDate),lookup(d.employees,a.employeeId)?.name||a.employeeId,a.templateName,
   a.status==='completed'?'Завершена':a.status==='open'?'Открыта':a.status==='missing'?'Нет отметки':'По графику',
   a.shiftId?'Зафиксировано':ui('button',{className:'outline mini-btn',onclick:async()=>{
-   if(!confirm('Снять назначение сотрудника на '+a.workDate+'?'))return;
+   if(!confirm('Снять назначение сотрудника на '+reportDate(a.workDate)+'?'))return;
    try{await call('ownerDeleteAssignment',{assignmentId:a.assignmentId});msg('Назначение удалено');await refreshDashboard();}
    catch(e){msg(e.message,true);}
   }},'Удалить')
@@ -251,7 +252,7 @@ function dashboardAnalyticsPanel(d){
  for(const s of shifts){const date=new Date(s.startedAt*1000).toLocaleDateString('sv-SE',{timeZone:d.organization.timezone});
   totalByDay.set(date,(totalByDay.get(date)||0)+Math.max(0,s.endedAt-s.startedAt)/3600);}
  const chart=ui('div',{className:'bar-chart'},...Array.from(totalByDay).sort(([a],[b])=>a.localeCompare(b)).map(([day,hours])=>
-  ui('div',{className:'bar-row'},ui('span',{},day.slice(5)),ui('div',{className:'bar-track'},
+  ui('div',{className:'bar-row'},ui('span',{},reportDate(day)),ui('div',{className:'bar-track'},
     ui('div',{className:'bar-fill',style:`width:${Math.max(2,Math.min(100,hours/24*100))}%`})),ui('strong',{},hours.toFixed(1)+' ч'))));
  return ui('div',{className:'dashboard-stack'},sectionTitle('Аналитика смен','Часы по датам, отклонения и проверка незакрытых смен.'),
   ui('section',{className:'panel'},ui('h3',{},'Отработанные часы по дням'),totalByDay.size?chart:ui('p',{className:'muted'},'Завершённых смен пока нет.')),
@@ -261,7 +262,7 @@ function dashboardAnalyticsPanel(d){
    ])):ui('p',{className:'muted'},'Отклонений за период не обнаружено.')),
   ui('section',{className:'panel'},ui('h3',{},'История смен'),
    table(['Сотрудник','Начало','Конец','Длительность','Комментарий при приходе','Комментарий при уходе'],shifts.slice(0,100).map(s=>[
-    lookup(d.employees,s.employeeId)?.name||s.employeeId,dateOnly(s.startedAt),dateOnly(s.endedAt),((s.endedAt-s.startedAt)/3600).toFixed(2)+' ч',s.startComment||'—',s.closeComment||'—'
+    lookup(d.employees,s.employeeId)?.name||s.employeeId,dateOnly(s.startedAt,d.organization.timezone),dateOnly(s.endedAt,d.organization.timezone),((s.endedAt-s.startedAt)/3600).toFixed(2)+' ч',s.startComment||'—',s.closeComment||'—'
    ]))));
 }
 function downloadReportCsv(d){
@@ -273,13 +274,12 @@ function downloadReportCsv(d){
 }
 function dashboardReportsPanel(d){
  const csvBtn=ui('button',{onclick:()=>downloadReportCsv(d)},'Выгрузить CSV');
- return ui('div',{className:'dashboard-stack'},sectionTitle('Месячный отчёт','Владелец вызывает расчёт за выбранный месяц без планировщика.'),
-  ui('section',{className:'panel'},ui('div',{className:'panel-head'},ui('h3',{},'Предварительный расчёт'),csvBtn),
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Месячный отчёт',reportRange(d.period)),
+  ui('section',{className:'panel'},ui('div',{className:'panel-head'},ui('h3',{},'Начисления'),csvBtn),
    table(['Сотрудник','Часы','Начисление','Незакрыто'],d.preview.entries.map(e=>[e.name,e.hours,currency(e.grossKopeks),e.unclosed])),
-   ui('div',{className:'report-total'},'Всего начислено: ',ui('strong',{},currency(d.preview.totals.grossKopeks))),
-   ui('p',{className:'muted'},'Это предварительные начисления: без НДФЛ, обязательных доплат и удержаний. Требуется проверка.')),
+   ui('div',{className:'report-total'},'Итого: ',ui('strong',{},currency(d.preview.totals.grossKopeks)))),
   ui('section',{className:'panel'},ui('h3',{},'Смены без отметки'),
-    d.assignments.some(a=>a.status==='missing')?table(['Дата','Сотрудник','Смена'],d.assignments.filter(a=>a.status==='missing').map(a=>[a.workDate,lookup(d.employees,a.employeeId)?.name,a.templateName])):
+    d.assignments.some(a=>a.status==='missing')?table(['Дата','Сотрудник','Смена'],d.assignments.filter(a=>a.status==='missing').map(a=>[reportDate(a.workDate),lookup(d.employees,a.employeeId)?.name,a.templateName])):
      ui('p',{className:'muted'},'Пропущенных назначенных смен за период не обнаружено.')));
 }
 function dashboardSettingsPanel(d){
@@ -350,15 +350,14 @@ function renderHome(){
  render(box);
 }
 function renderReport(r){
- const box=element('section',{className:'panel'},element('h1',{},'Предварительное начисление'),
-  element('p',{},`${r.period.start} — ${r.period.endExclusive} (исключая дату окончания)`));
+ const box=element('section',{className:'panel'},element('h1',{},'Отчёт по сменам'),
+  element('p',{},reportRange(r.period)));
  for(const e of r.entries)box.append(element('p',{},`${e.name}: ${e.hours} ч, ${(e.grossKopeks/100).toFixed(2)} ₽${e.unclosed?' ⚠️ '+e.unclosed+' незакрытых':''}`));
  if(r.exceptions?.length){
   box.append(element('h2',{},`Отклонения от графика: ${r.exceptions.length}`));
   for(const item of r.exceptions)box.append(element('p',{},`${item.name}: ${item.status==='early'?'раньше':'позже'} на ${Math.abs(item.differenceMinutes)} мин. Причина: ${item.closeComment||'не указана'}`));
  }
  box.append(element('strong',{},`Итого: ${(r.totals.grossKopeks/100).toFixed(2)} ₽`),
-  element('p',{className:'muted'},'Без удержаний и обязательных доплат. Требуется проверка.'),
   element('button',{onclick:renderHome},'Назад'));render(box);
 }
 (async()=>{

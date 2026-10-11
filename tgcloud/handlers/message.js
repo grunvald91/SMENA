@@ -2,6 +2,7 @@ import { api } from 'sdk';
 import { DomainError } from '../lib/errors.js';
 import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,setLocationHours,createShiftTemplate,assignShift } from '../lib/service.js';
 import { rubles } from '../lib/payroll.js';
+import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
 function money(input){
  if(!/^\d{1,7}(?:[.,]\d{1,2})?$/.test(input||'')) throw new DomainError('BAD_MONEY','Сумма: 250 или 250.50');
@@ -95,7 +96,7 @@ export default async function(message){
   if(cmd.cmd==='shiftassign'){
    const m=/^(\d+)\s+(\d+)\s+(\d{4}-\d{2}-\d{2})$/u.exec(cmd.args);
    if(!m)throw new DomainError('BAD_COMMAND','Пример: /shiftassign 2 1 2026-10-12 (внутренний ID сотрудника, ID смены, дата)');
-   const a=await assignShift(tgId,Number(m[1]),Number(m[2]),m[3]);await reply(chat,`✅ Назначение #${a.id} на ${a.workDate} сохранено.`);return;
+   const a=await assignShift(tgId,Number(m[1]),Number(m[2]),m[3]);await reply(chat,`✅ Назначение #${a.id} на ${reportDate(a.workDate)} сохранено.`);return;
   }
   if(cmd.cmd==='team'){
    const team=await listEmployees(tgId);await reply(chat,team.length?team.map(x=>`${x.name}: ID ${x.id}, Telegram ${x.tgId}, ${rubles(x.hourlyKopeks)}/ч, за смену ${rubles(x.shiftBonusKopeks||0)}`).join('\n'):'Сотрудников пока нет.');return;
@@ -109,7 +110,7 @@ export default async function(message){
   }
   if(cmd.cmd==='problems'){
    const broken=await findProblems(tgId);
-   await reply(chat,broken.length?`⚠️ Незакрытые смены до сегодняшнего дня:\n${broken.map(s=>`#${s.shiftId} ${s.name} (${new Date(s.startedAt*1000).toISOString()})`).join('\n')}`:'✅ Нет незакрытых смен за предыдущие дни.');return;
+   await reply(chat,broken.length?`⚠️ Незакрытые смены до сегодняшнего дня:\n${broken.map(s=>`#${s.shiftId} ${s.name} (${reportMoment(s.startedAt,s.timezone)})`).join('\n')}`:'✅ Нет незакрытых смен за предыдущие дни.');return;
   }
   if(cmd.cmd==='open'||cmd.cmd==='close'||cmd.cmd==='in'||cmd.cmd==='out'){
    await reply(chat,'Для отметки необходимо отсканировать актуальный QR-код на рабочем устройстве и выбрать действие.');return;
