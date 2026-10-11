@@ -31,4 +31,5 @@ test('photo posting eligibility rejects removed and restricted bots',()=>{
  assert.equal(canBotPostPhoto({status:'restricted',is_member:true,can_send_messages:true,can_send_photos:true}),true);
  assert.equal(canBotPostPhoto({status:'restricted',is_member:true,can_send_messages:true,can_send_photos:false}),false);
  assert.equal(canBotPostPhoto({status:'left'}),false);
+ assert.equal(canBotPostPhoto({status:'member'}, {permissions:{can_send_photos:false}}),false);
 });
