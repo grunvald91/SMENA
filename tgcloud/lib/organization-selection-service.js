@@ -21,7 +21,7 @@ export async function describeOrganizationSelection(tgId) {
 export async function chooseOrganization(tgId,orgId) {
   if (!Number.isSafeInteger(orgId) || orgId<=0)
     throw new DomainError('BAD_ORGANIZATION','Некорректная организация');
-  const grant=await requireOrganizationPermission(tgId,orgId,'organization.view');
+  const grant=await requireOrganizationPermission(tgId,orgId,'organization.select');
   const found=await db.select().from(userOrganizationSelections)
     .where(eq(userOrganizationSelections.userTgId,tgId)).get();
   if (found) {
