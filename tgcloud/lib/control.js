@@ -2,6 +2,7 @@ import {db,api,InputFile,BotApiError} from 'sdk';
 import {eq,and,isNull,desc,inArray} from 'sdk/db';
 import {organizations,locations,employees,shifts,devices,controlRequests,controlSubmissions,auditLog} from '../schema.js';
 import {requireOwner,ownerOrg,resolvePhotoQr} from './service.js';
+import {capturePublishedPhoto} from './ai-memory.js';
 import {requireInput} from './errors.js';
 import {nonce} from './security.js';
 import {validateCloseComment} from './schedule.js';
@@ -119,5 +120,8 @@ export async function completeControl(tgId,submissionId,photos,comment){
   await db.update(controlSubmissions).set({status:e instanceof BotApiError&&e.code>=400&&e.code<500?'pending':'uncertain'}).where(eq(controlSubmissions.id,sub.id)).run();throw e;
  }
  await db.insert(auditLog).values({orgId:org.id,actorTgId:tgId,action:'control.completed',refId:sub.id,at,data:{requestId:request.id,photoCount:bytes.length,late:at>request.deadlineAt}}).run();
+ // AI observation must never turn a successful photo-control delivery into a failure.
+ try{for(const p of saved){await capturePublishedPhoto({orgId:org.id,chatId:loc.chatId,messageId:p.messageId,employeeTgId:tgId,fileId:p.fileId,caption,at});}}
+ catch(e){console.error('AI control media capture failed',e?.code||e?.name||'unknown');}
  return {done:true,photoCount:bytes.length,late:at>request.deadlineAt};
 }
