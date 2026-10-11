@@ -3,7 +3,8 @@ import {eq} from 'sdk/db';
 import {onboardingSessions} from '../schema.js';
 import {ownerOrg,requireOwner,setup,bindChat} from './service.js';
 import {DomainError,requireInput} from './errors.js';
-import {validateSharedChat,isAdministrator,canBotPostPhoto} from './onboarding-ui.js';
+import {validateSharedChat,isAdministrator,canBotPostPhoto,matchOrganizationChoice} from './onboarding-ui.js';
+import {describeOrganizationSelection,chooseOrganization} from './organization-selection-service.js';
 const now=()=>Math.floor(Date.now()/1000);
 const TTL=15*60;
 const validUserId=id=>Number.isSafeInteger(id)&&id>0;
@@ -74,4 +75,23 @@ export async function finishGroupOnboarding(tgId,sharedChat){
  const location=await bindChat(tgId,chatId,(chat.title||sharedChat.title||'Рабочая точка').trim());
  await cancelOnboarding(tgId);
  return location;
+}
+
+export async function beginBusinessSwitch(tgId){
+ requireSessionUser(tgId);
+ const {organizations}=await describeOrganizationSelection(tgId);
+ requireInput(organizations.length>0,'NO_ORGANIZATION','Пока нет доступных организаций');
+ await storeSession(tgId,'choose_organization');
+ return organizations;
+}
+export async function finishBusinessSwitch(tgId,label){
+ requireSessionUser(tgId);
+ const session=await getOnboardingSession(tgId);
+ requireInput(session?.phase==='choose_organization','NO_SELECTION','Сначала нажмите «Мои бизнесы»');
+ const {organizations}=await describeOrganizationSelection(tgId);
+ const chosen=matchOrganizationChoice(label,organizations);
+ requireInput(!!chosen,'BAD_ORGANIZATION','Организация не найдена. Повторите выбор.');
+ const result=await chooseOrganization(tgId,chosen.id);
+ await cancelOnboarding(tgId);
+ return result.selectedOrganization;
 }

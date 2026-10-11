@@ -326,8 +326,29 @@ function renderDashboard(){
 const controlUI=createControlUI({element,render,call,state,T,home:renderHome,msg});
 function renderHome(){
  const owner=state.context?.owner;
+ const selected=state.context?.selectedOrganization;
+ const available=state.context?.organizations||[];
  const box=element('section',{className:'panel'},element('h1',{},'ServGo Смена'),
-  element('p',{},owner?`Организация: ${owner.name}`:'Для открытия и закрытия смен сканируйте QR на рабочем месте.'),scanButton(),controlUI.button());
+  element('p',{},owner?`Организация: ${owner.name}`:selected?`Выбрано: ${selected.name}`:'Для открытия и закрытия смен сканируйте QR на рабочем месте.'),scanButton(),controlUI.button());
+ if(available.length>1){
+  const orgLabel=element('label',{className:'field'},'Мои организации');
+  const orgSelect=element('select');
+  orgSelect.append(element('option',{value:''},'Выберите бизнес'));
+  for(const org of available)orgSelect.append(element('option',{value:org.id},`${org.name} · ${org.role==='owner'?'владелец':org.role==='manager'?'управляющий':'сотрудник'}`));
+  orgSelect.value=selected?String(selected.id):'';
+  orgSelect.addEventListener('change',async()=>{
+   if(!orgSelect.value)return;
+   orgSelect.disabled=true;
+   try{
+    await call('selectOrganization',{organizationId:Number(orgSelect.value)});
+    state.context=await call('getContext');
+    renderHome();
+   }catch(e){orgSelect.disabled=false;msg(e.message,true);}
+  });
+  orgLabel.append(orgSelect);box.append(orgLabel);
+  if(state.context?.selectionRequired)box.append(element('p',{className:'notice'},'Для управления выберите свою организацию.'));
+ }
+ if(selected&&!owner)box.append(element('p',{className:'muted'},'В этой организации можно отмечать смены и просматривать назначенный фотоконтроль. Редактирование настроек и начислений доступно только в вашем основном бизнесе.'));
  if(owner){
   const choices=element('select');for(const loc of owner.locations)choices.append(element('option',{value:loc.id},`${loc.name} (#${loc.id})`));
   const pointName=element('input',{type:'text',maxlength:100,value:owner.locations[0]?.name||'',placeholder:'Название рабочей точки'});

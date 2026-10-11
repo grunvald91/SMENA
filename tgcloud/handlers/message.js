@@ -4,8 +4,10 @@ import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmp
 import { rubles } from '../lib/payroll.js';
 import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
-import {ONBOARDING_BUTTONS as OB,mainKeyboard,cancelKeyboard,groupPickerKeyboard} from '../lib/onboarding-ui.js';
-import {getOnboardingSession,beginBusinessOnboarding,finishBusinessOnboarding,beginGroupOnboarding,finishGroupOnboarding,cancelOnboarding} from '../lib/onboarding-service.js';
+import {describeOrganizationSelection} from '../lib/organization-selection-service.js';
+import {legacyOwnerForSelection} from '../lib/scoped-owner.js';
+import {ONBOARDING_BUTTONS as OB,mainKeyboard,cancelKeyboard,groupPickerKeyboard,organizationPickerKeyboard} from '../lib/onboarding-ui.js';
+import {getOnboardingSession,beginBusinessOnboarding,finishBusinessOnboarding,beginGroupOnboarding,finishGroupOnboarding,cancelOnboarding,beginBusinessSwitch,finishBusinessSwitch} from '../lib/onboarding-service.js';
 function money(input){
  if(!/^\d{1,7}(?:[.,]\d{1,2})?$/.test(input||'')) throw new DomainError('BAD_MONEY','Сумма: 250 или 250.50');
  const [a,b='']=input.replace(',','.').split('.');return Number(a)*100+Number(b.padEnd(2,'0'));
@@ -41,8 +43,15 @@ async function reply(chatId,message,markup=null) {
  for(let i=0;i<parts.length;i++)await api.sendMessage({chat_id:chatId,text:parts[i],...(markup&&i===parts.length-1?{reply_markup:markup}:{})});
 }
 async function sendOnboardingMenu(tgId,chat) {
- const org=await ownerOrg(tgId);
- await reply(chat,org?`🏢 ${org.name}\nВыберите, что нужно сделать:`:'Добро пожаловать в ServGo Смена! Сначала создадим ваш бизнес.',mainKeyboard(!!org));
+ const [legacy,state]=await Promise.all([ownerOrg(tgId),describeOrganizationSelection(tgId)]);
+ if(state.selectionRequired){
+  const available=await beginBusinessSwitch(tgId);
+  await reply(chat,'У вас несколько организаций. Выберите, с какой будем работать.',organizationPickerKeyboard(available));return;
+ }
+ const selected=state.selectedOrganization;
+ const canManage=!!legacyOwnerForSelection(legacy,state);
+ const hello=selected?`🏢 ${selected.name}\nВыберите действие:`:'Добро пожаловать в ServGo Смена! Создадим ваш бизнес.';
+ await reply(chat,hello,mainKeyboard(canManage,{hasMembership:state.organizations.length>0,canCreate:!legacy}));
 }
 
 export default async function(message){
@@ -57,6 +66,15 @@ export default async function(message){
   if(privateChat){
    const plain=(message.text||'').trim();
    if(plain===OB.cancel){await cancelOnboarding(tgId);await sendOnboardingMenu(tgId,chat);return;}
+   if(plain===OB.businesses){
+    const organizations=await beginBusinessSwitch(tgId);
+    await reply(chat,'Выберите бизнес:',organizationPickerKeyboard(organizations));return;
+   }
+   if(plain.startsWith('🏬 ')){
+    const chosen=await finishBusinessSwitch(tgId,plain);
+    await reply(chat,`✅ Выбрано: ${chosen.name}`);
+    await sendOnboardingMenu(tgId,chat);return;
+   }
    if(plain===OB.create){
     await beginBusinessOnboarding(tgId);
     await reply(chat,'Как назовём ваш бизнес? Напишите название одним сообщением.',cancelKeyboard());return;
@@ -71,8 +89,7 @@ export default async function(message){
    }
    if(plain===OB.report){await reply(chat,formatReport(await makeReport(tgId,[])),mainKeyboard(true));return;}
    if(plain===OB.dashboard){
-    await requireOwner(tgId);
-    await reply(chat,'Откройте кабинет для графиков, сотрудников и QR-устройств.',{
+    await reply(chat,'Откройте ServGo Смена. Ваши функции зависят от роли в выбранной организации.',{
      inline_keyboard:[[{text:'📱 Открыть Смену',web_app:{url:'https://app8926504673.tgcloud.ai/'}}]]
     });return;
    }
