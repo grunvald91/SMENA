@@ -57,7 +57,7 @@ export async function analyzeOwnerPhoto(ownerId,messageRowId){
   const file=await api.getFile({file_id:image.fileId});
   requireInput(!file?.file_size||file.file_size<=8000000,'IMAGE_TOO_LARGE','Оригинал слишком велик для текущего шлюза');
   const raw=await api.getFileContent(image.fileId);
-  requireInput(raw?.length>=24&&raw.length<=8000000&&raw[0]===255&&raw[1]===216&&raw[2]===255,'BAD_IMAGE','Нужен доступный JPEG');
+  requireInput(raw?.length>=24&&raw.length<=8000000&&raw[0]===255&&raw[1]===216&&raw[2]===255&&raw[raw.length-2]===255&&raw[raw.length-1]===217,'BAD_IMAGE','Нужен доступный JPEG');
   // No preprocessing tool is required. The original is used when no prepared photo exists.
   const selection=chooseVisionImage({original:{bytes:raw},prepared:null,transferAllowed:cfg.allowOriginalPhotos===1});
   requireInput(selection.ok,'IMAGE_NOT_AVAILABLE','Фото недоступно');
