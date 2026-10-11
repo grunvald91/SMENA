@@ -4,13 +4,8 @@ import {aiCalibrationSchedules,aiChatSettings,organizations} from '../schema.js'
 import {prepareOwnerReview} from './ai-memory.js';
 import {evidenceUrl} from './ai-rules.js';
 
-export const FIRST_REVIEW_DAYS=14;
-export const FOLLOWUP_DAYS=7;
-const DAY=86400;
+import {FIRST_REVIEW_DAYS,firstReviewDue,followingReviewDue} from './ai-calibration-rules.js';
 const clock=()=>Math.floor(Date.now()/1000);
-
-export function firstReviewDue(startedAt){return startedAt+DAY*FIRST_REVIEW_DAYS;}
-export function followingReviewDue(dueAt){return dueAt+DAY*FOLLOWUP_DAYS;}
 
 export async function ensureCalibrationSchedule(orgId,startedAt){
  const existing=await db.select().from(aiCalibrationSchedules).where(eq(aiCalibrationSchedules.orgId,orgId)).get();
