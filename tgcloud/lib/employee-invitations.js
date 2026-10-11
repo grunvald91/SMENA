@@ -30,7 +30,7 @@ export async function startEmployeeJoin(tgId,token){
  let request=await db.select().from(employeeJoinRequests).where(and(
   eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.userTgId,tgId)
  )).get();
- if(request?.status==='approved')return {kind:'joined',organization:org.name};
+ if(request?.status==='approved')throw new DomainError('INACTIVE_EMPLOYEE','Сотрудник ранее был подключён. Если доступ закрыт, обратитесь к владельцу для повторной активации.');
  if(request?.status==='pending')return {kind:'pending',organization:org.name};
  if(request?.status==='rejected')throw new DomainError('REJECTED','Ранее заявка была отклонена. Обратитесь к владельцу.');
  if(!request){
