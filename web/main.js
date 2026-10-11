@@ -308,6 +308,40 @@ function dashboardAiPanel(){
   try{await call('ownerAiAnalysis',{action:'disable'});msg('Внешний ИИ отключён');await refresh();}
   catch(err){msg(err.message,true);}
  }},'Отключить модель');
+ const photoStatus=ui('p',{className:'muted'},'Загрузка фотографий...');
+ const photoItems=ui('div',{className:'dashboard-stack'});
+ let originalAllowed=false;
+ const togglePhotos=ui('button',{className:'outline',onclick:async()=>{
+  try{
+   const allowed=!originalAllowed;
+   if(allowed&&!window.confirm('Разрешить передачу оригинальных рабочих фото во внешнюю мультимодальную модель, если предварительная обработка невозможна?'))return;
+   await call('ownerAiPhoto',{action:'permission',allowed});
+   msg(allowed?'Анализ исходных фото разрешён':'Передача исходных фото отключена');await refreshPhotos();
+  }catch(err){msg(err.message,true);}
+ }},'Разрешить анализ исходных фото');
+ const refreshPhotos=async()=>{
+  try{
+   const data=await call('ownerAiPhoto',{action:'list'});
+   originalAllowed=!!data.allowed;
+   togglePhotos.textContent=originalAllowed?'Отключить передачу исходных фото':'Разрешить анализ исходных фото';
+   photoStatus.textContent=originalAllowed?'Передача оригиналов разрешена. Фото анализируются только по кнопке.':'Для анализа изображений разрешите передачу оригиналов.';
+   photoItems.replaceChildren();
+   for(const p of data.photos||[]){
+    const controls=ui('div',{className:'header-actions'});
+    if(p.link)controls.append(ui('a',{href:p.link,target:'_blank',rel:'noopener noreferrer'},'Открыть исходное сообщение'));
+    const button=ui('button',{className:'outline',disabled:!originalAllowed||p.status==='done',onclick:async()=>{
+     button.disabled=true;
+     try{const r=await call('ownerAiPhoto',{action:'analyze',messageRowId:p.id});
+      msg('Проверка фото завершена, новых наблюдений: '+r.findings+'. Посмотрите их через /ai_review 14.');await refreshPhotos();
+     }catch(err){msg(err.message,true);button.disabled=false;}
+    }},p.status==='done'?'Проверено':p.status==='processing'?'Проверяется':'Проверить фото');
+    controls.append(button);
+    photoItems.append(ui('div',{className:'panel'},ui('p',{},p.caption||'Фото из рабочей группы'),ui('p',{className:'muted'},'Статус: '+p.status),controls));
+   }
+   if(!(data.photos||[]).length)photoItems.append(ui('p',{className:'muted'},'Сохранённых фотографий пока нет.'));
+  }catch(err){photoStatus.textContent='Не удалось загрузить список фото: '+err.message;}
+ };
+ refreshPhotos();
  const refresh=async()=>{
   try{const s=await call('ownerAiAnalysis',{action:'status'});
    status.textContent=s.configured?'Шлюз подключён. Очередь: примерно '+s.pending+' сообщений. Обработано до записи №'+s.cursor+'.':'Шлюз пока не подключён. Переписка может продолжать накапливаться без внешнего анализа.';
@@ -318,6 +352,7 @@ function dashboardAiPanel(){
  return ui('section',{className:'panel'},ui('h3',{},'ИИ-память бизнеса'),
   ui('p',{},'ServGo собирает сообщения только в рабочих группах, где владелец включил /ai_on. Отдельный анализ моделью запускается по запросу.'),
   status,configure,run,disable,
+  ui('h3',{},'Проверка фотографий'),photoStatus,togglePhotos,photoItems,
   ui('p',{className:'muted'},'Один запуск обрабатывает до 60 сообщений. Результаты сохраняются как неподтверждённые гипотезы; ни смены, ни зарплаты нейросеть не изменяет.'));
 }
 function dashboardSettingsPanel(d){
