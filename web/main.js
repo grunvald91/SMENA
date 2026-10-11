@@ -285,7 +285,7 @@ function dashboardReportsPanel(d){
 function dashboardAiPanel(){
  const status=ui('p',{className:'muted'},'Проверка состояния ИИ...');
  const capability=ui('input',{type:'password',autocomplete:'new-password',placeholder:'Ключ сервиса ServGo'});
- const photoOptIn=ui('input',{type:'checkbox',checked:true});
+ const photoOptIn=ui('input',{type:'checkbox'});
  const connect=ui('button',{type:'submit'},'Подключить автоматический анализ');
  const form=ui('form',{className:'form-grid'},
   ui('label',{className:'field'},'Служебный ключ ServGo',capability),
