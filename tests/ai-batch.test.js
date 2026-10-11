@@ -8,12 +8,12 @@ test('model input hides identifiers while preserving stable pseudonyms, reply an
   {chatId:-100999,messageId:32,sentAt:1760200020,authorTgId:888,replyToMessageId:31,kind:'text',content:'Проверю'}
  ];
  const data=buildPrivateBatch(messages,{employeeNames:['Александр Иванов'],
-  actorAliases:{'u:888':'участник-random'},reactions:[{chatId:-100999,messageId:31,reactions:[{type:'emoji',emoji:'👍'}]}]});
+  actorAliases:{'u:888':'участник-random'},reactions:[{chatId:-100999,messageId:31,reactions:[{type:'emoji',emoji:'👍'}]},{chatId:-100999,messageId:31,reactions:[{type:{type:'emoji',emoji:'🔥'},total:2}]}]});
  const str=JSON.stringify(data.payload);
  assert.doesNotMatch(str,/100999|888|Александр Иванов|999|messageId|chatId/);
  assert.equal(data.payload.messages[0].actor,'участник-random');
  assert.equal(data.payload.messages[1].replyTo,'m1');
- assert.deepEqual(data.payload.messages[0].reactions,['👍']);
+ assert.deepEqual(data.payload.messages[0].reactions,['👍','🔥 ×2']);
  assert.equal(data.sourceMap.m1.messageId,31);
 });
 test('hallucinated sources are rejected, only grounded findings accepted',()=>{
