@@ -70,7 +70,7 @@ export async function analyzeNextBatch(ownerTgId){
    return {processed:page.length,proposed:0,skipped:page.length};
   }
   const first=Math.min(...messages.map(x=>x.sentAt)),last=Math.max(...messages.map(x=>x.sentAt));
-  const confirmed=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),inArray(aiFindings.status,['confirmed','corrected'])))
+  const confirmed=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),inArray(aiFindings.status,['confirmed','corrected','rejected'])))
    .orderBy(desc(aiFindings.reviewedAt)).limit(25).all();
   const ids=messages.map(x=>x.messageId);
   const reactions=await db.select().from(aiReactions).where(and(eq(aiReactions.orgId,org.id),inArray(aiReactions.messageId,ids))).limit(400).all();
