@@ -54,9 +54,9 @@ export async function callProvider(payload,{env=process.env,fetchImpl=fetch}={})
 export function validVisionPayload(p){
  if(!p||p.version!==1||p.mode!=='vision'||p.sourceRef!=='m1'||typeof p.caption!=='string'||p.caption.length>600||!p.image||p.image.mime!=='image/jpeg')return false;
  const b=p.image.base64;
- if(typeof b!=='string'||b.length<32||b.length>2100000||!/^\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(b))return false;
+ if(typeof b!=='string'||b.length<32||b.length>10800000||!/^\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(b))return false;
  const bytes=Buffer.from(b,'base64');
- return bytes.length>=24&&bytes.length<=1500000&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
+ return bytes.length>=24&&bytes.length<=8000000&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
 }
 export async function callVisionProvider(payload,{env=process.env,fetchImpl=fetch}={}){
  if(!validVisionPayload(payload))throw new Error('VISION_INVALID_PAYLOAD');
@@ -81,7 +81,7 @@ export async function callVisionProvider(payload,{env=process.env,fetchImpl=fetc
 
 export function createGatewayHandler({env=process.env,fetchImpl=fetch}={}){
  const hashes=String(env.AI_GATEWAY_CAPABILITY_HASHES||'').split(',').map(x=>x.trim()).filter(Boolean);
- const maxBody=2400000;
+ const maxBody=11200000;
  // Local quota is a safety valve for a single gateway process. Multi-instance
  // production deployments require durable shared usage accounting.
  const usage=new Map();
