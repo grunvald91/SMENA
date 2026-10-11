@@ -1,6 +1,6 @@
 # ServGo AI gateway — setup and release gates
 
-The new model integration is **implemented in source code but not published**. Telegram Serverless has SDK outbound `fetch`, but the model provider API key must not be placed in `tgcloud/`, in Git, or in Telegram chat history.
+The new text and image model integrations are **implemented in source code but not published**. Telegram Serverless has SDK outbound `fetch`, but the model provider API key must not be placed in `tgcloud/`, in Git, or in Telegram chat history.
 
 ## Architecture
 
@@ -44,7 +44,7 @@ Use Node.js 20+ on the trusted VPS, from the repository root. Do not use GitHub 
 - Daily request quota per capability (default 40) and 15-minute identical-request response cache operate **in one process memory only**. They reset on restart and do not work across replicas. Introduce a durable central limiter before multi-instance production.
 - No raw request bodies, upstream credentials or headers should be logged; review host access logs for inadvertent sensitive request bodies.
 - No provider API calls before the owner explicitly configures an authorized gateway.
-- Current integration covers **text + emoji reactions**; photo understanding is not yet connected. The photo preprocessor fallback contract permits original-byte transfer when permitted, but no image bytes are sent in this phase.
+- Text and emoji-analysis integration is implemented in source. The separate photo review is now wired to a vision-capable model via /v1/vision, but is **not yet deployed or tested with a live provider**.
 
 ## Known limitations
 
