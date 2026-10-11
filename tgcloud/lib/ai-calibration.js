@@ -29,7 +29,7 @@ function digest(report,isFirst){
   const e=(finding.evidence||[])[0];
   if(e)lines.push('Источник: '+(evidenceUrl(e.chatId,e.messageId)||'сообщение №'+e.messageId));
  }
- lines.push('Это не установленные факты. В личном чате отправьте /ai_review 14, чтобы проверить все выводы и подтвердить или исправить их.');
+ lines.push('Это предварительные выводы. Ниже появятся карточки для проверки: нажмите «Верно» или «Неверно».');
  return lines.join('\n').slice(0,3700);
 }
 
@@ -50,6 +50,18 @@ export async function maybeSendCalibrationReview(chatId){
  try{
   const overview=await prepareOwnerReview(org.ownerTgId,FIRST_REVIEW_DAYS);
   await api.sendMessage({chat_id:org.ownerTgId,text:digest(overview,!schedule.lastSentAt)});
+  const cards=overview.findings.filter(x=>x.status==='proposed').slice(0,10);
+  for(const item of cards){
+   const source=(item.evidence||[])[0],url=source?evidenceUrl(source.chatId,source.messageId):null;
+   const text=['#'+item.id+' · '+item.title,(item.statement||'').slice(0,700),
+    url?'Источник: '+url:'', 'Если нужно исправить: /ai_correct '+item.id+' правильная формулировка']
+    .filter(Boolean).join('\n').slice(0,1050);
+   await api.sendMessage({chat_id:org.ownerTgId,text,
+    reply_markup:{inline_keyboard:[[
+     {text:'✅ Верно',callback_data:'ai:confirm:'+item.id},
+     {text:'❌ Неверно',callback_data:'ai:reject:'+item.id}
+    ]]}});
+  }
   await db.update(aiCalibrationSchedules).set({lastSentAt:clock(),busyUntil:0,claimToken:null})
    .where(eq(aiCalibrationSchedules.orgId,config.orgId)).run();
   return true;
