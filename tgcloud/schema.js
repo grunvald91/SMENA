@@ -142,7 +142,8 @@ export const aiGatewaySettings=table('ai_gateway_settings',{
  capability:text('capability').notNull(),
  active:integer('active').notNull().default(0),
  configuredAt:integer('configured_at').notNull(),
- allowOriginalPhotos:integer('allow_original_photos').notNull().default(0)
+ allowOriginalPhotos:integer('allow_original_photos').notNull().default(0),
+ allowOriginalFiles:integer('allow_original_files').notNull().default(0)
 });
 export const aiAnalysisProgress=table('ai_analysis_progress',{
  orgId:integer('org_id').primaryKey(),
