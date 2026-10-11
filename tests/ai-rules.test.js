@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeWorkMessage,normalizeReactions,normalizeReactionTotals,reactionActorKey,reviewCandidates,redactForModel} from '../tgcloud/lib/ai-rules.js';
+import {normalizeWorkMessage,normalizeReactions,normalizeReactionTotals,reactionActorKey,reviewCandidates,redactForModel,evidenceUrl} from '../tgcloud/lib/ai-rules.js';
 test('normalizes replies, edits and photo references without inventing content',()=>{
  const row=normalizeWorkMessage({chat:{id:-10017},message_id:44,from:{id:10},date:100,
   edit_date:110,reply_to_message:{message_id:40},photo:[{file_id:'small'},{file_id:'big'}],caption:'Зал убран'});
@@ -36,3 +36,5 @@ test('external snippets remove direct obvious identifiers',()=>{
  assert.match(hidden,/\[PHONE\]/);assert.match(hidden,/\[EMAIL\]/);
  assert.match(hidden,/\[USERNAME\]/);
 });
+
+test('Telegram evidence links are limited to supergroups',()=>{ assert.equal(evidenceUrl(-100123456,45),'https://t.me/c/123456/45'); assert.equal(evidenceUrl(-123456,45),null); });
