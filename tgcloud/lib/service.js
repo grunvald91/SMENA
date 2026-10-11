@@ -11,6 +11,8 @@ import { validateTemplate,templateWindow,chooseAssignment,daysAround } from './r
 import { parseISODate } from './time.js';
 import {isShiftToken,parseKioskToken,kioskMessage} from './kiosk-token.js';
 import {shiftPhotoCaption} from './shift-caption.js';
+import {describeOrganizationSelection} from './organization-selection-service.js';
+import {legacyOwnerForSelection} from './scoped-owner.js';
 const now=()=>Math.floor(Date.now()/1000);
 const validId=x=>Number.isSafeInteger(Number(x))&&Number(x)>0;
 async function audit(orgId,tgId,action,refId,data={}) {
@@ -21,7 +23,13 @@ export async function ownerOrg(tgId) {
  return await db.select().from(organizations).where(eq(organizations.ownerTgId,Number(tgId))).get();
 }
 export async function requireOwner(tgId){
- const org=await ownerOrg(tgId);requireInput(!!org,'FORBIDDEN','Эта операция доступна только владельцу организации');return org;
+ const legacy=await ownerOrg(tgId);
+ requireInput(!!legacy,'FORBIDDEN','Эта операция доступна только владельцу организации');
+ const state=await describeOrganizationSelection(tgId);
+ const org=legacyOwnerForSelection(legacy,state);
+ requireInput(!!org,state.selectionRequired?'ORGANIZATION_REQUIRED':'WRONG_ORGANIZATION',
+  'Выберите свой бизнес в меню перед управлением сотрудниками, сменами или отчётами.');
+ return org;
 }
 export async function setup(tgId,name){
  requireInput(validId(tgId),'UNAUTHORIZED','Нет Telegram ID');

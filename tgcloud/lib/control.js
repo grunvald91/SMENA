@@ -2,6 +2,8 @@ import {db,api,InputFile,BotApiError} from 'sdk';
 import {eq,and,isNull,desc,inArray} from 'sdk/db';
 import {organizations,locations,employees,shifts,devices,controlRequests,controlSubmissions,auditLog} from '../schema.js';
 import {requireOwner,ownerOrg,resolvePhotoQr} from './service.js';
+import {describeOrganizationSelection} from './organization-selection-service.js';
+import {legacyOwnerForSelection} from './scoped-owner.js';
 import {requireInput} from './errors.js';
 import {nonce} from './security.js';
 import {validateCloseComment} from './schedule.js';
@@ -21,7 +23,8 @@ async function recipient(tgId,requestId){
  requireInput(!!person&&request.targets.some(x=>x.id===person.id),'FORBIDDEN','Этот контроль назначен другому сотруднику');return {request,person};
 }
 export async function controlContext(tgId){
- const org=await ownerOrg(tgId),people=await db.select().from(employees).where(and(eq(employees.tgId,tgId),eq(employees.active,1))).all();
+ const [legacy,state,people]=await Promise.all([ownerOrg(tgId),describeOrganizationSelection(tgId),db.select().from(employees).where(and(eq(employees.tgId,tgId),eq(employees.active,1))).all()]);
+ const org=legacyOwnerForSelection(legacy,state);
  const orgIds=[...new Set([...(org?[org.id]:[]),...people.map(x=>x.orgId)])];
  if(!orgIds.length)return {owner:null,tasks:[],requests:[]};
  const rows=await db.select().from(controlRequests).where(inArray(controlRequests.orgId,orgIds)).orderBy(desc(controlRequests.createdAt)).limit(200).all();
