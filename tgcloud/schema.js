@@ -190,3 +190,12 @@ export const aiMediaJobs=table('ai_media_jobs',{
  nextAttemptAt:integer('next_attempt_at').notNull().default(0),
  updatedAt:integer('updated_at').notNull()
 },t=>({orgStatus:index('idx_ai_media_job_queue').on(t.orgId,t.status,t.nextAttemptAt)}));
+
+export const aiDirtyMessages=table('ai_dirty_messages',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),
+ updatedAtMs:integer('updated_at_ms').notNull(),
+ processedAtMs:integer('processed_at_ms').notNull().default(0)
+},t=>({unique:uniqueIndex('uq_ai_dirty_org_message').on(t.orgId,t.chatId,t.messageId),
+ pending:index('idx_ai_dirty_pending').on(t.orgId,t.updatedAtMs)}));
