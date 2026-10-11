@@ -23,8 +23,9 @@ export function validateSharedChat(session,payload,stamp){
  return payload.chat_id;
 }
 export function isAdministrator(status){return status==='creator'||status==='administrator';}
-export function canBotPostPhoto(member){
+export function canBotPostPhoto(member,chat=null){
  if(!member||['left','kicked'].includes(member.status))return false;
  if(member.status==='restricted')return member.is_member===true&&member.can_send_messages===true&&member.can_send_photos===true;
+ if(member.status==='member'&&(chat?.permissions?.can_send_photos===false||chat?.permissions?.can_send_messages===false))return false;
  return member.status==='member'||isAdministrator(member.status);
 }
