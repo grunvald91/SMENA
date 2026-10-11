@@ -9,7 +9,7 @@ import { decodeSelfie } from './photo.js';
 import { minuteOfDay,validateGrace,plannedEndForStart,closingReview,validateCloseComment } from './schedule.js';
 import { validateTemplate,templateWindow,chooseAssignment,daysAround } from './roster.js';
 import { parseISODate } from './time.js';
-import {isShiftToken,parseKioskToken,kioskMessage} from './kiosk-token.js';
+import {isShiftToken,parseKioskToken,kioskMessage,kioskDeviceIdFromPublicKey} from './kiosk-token.js';
 import {shiftPhotoCaption} from './shift-caption.js';
 import {describeOrganizationSelection} from './organization-selection-service.js';
 import {legacyOwnerForSelection} from './scoped-owner.js';
@@ -187,7 +187,7 @@ export async function listEmployees(tgId) {
  const org=await requireOwner(tgId);
  return await db.select().from(employees).where(eq(employees.orgId,org.id)).all();
 }
-export async function enrollDevice(tgId,locationId,publicJwk) {
+export async function enrollDevice(tgId,locationId,publicJwk,{externalKiosk=false}={}) {
  requireCrypto();const org=await requireOwner(tgId);
  const loc=await db.select().from(locations).where(and(eq(locations.id,Number(locationId)),eq(locations.orgId,org.id))).get();
  requireInput(!!loc,'NOT_FOUND','Рабочая точка не найдена');
@@ -196,9 +196,20 @@ export async function enrollDevice(tgId,locationId,publicJwk) {
  // Verify key structure, but enrollment is explicitly owner-authorized. Physical uniqueness is not attested.
  validateDevicePublicKey(publicJwk);
  const previous=await db.select().from(devices).where(and(eq(devices.locationId,loc.id),isNull(devices.revokedAt))).get();
- requireInput(!previous,'DEVICE_ALREADY_ACTIVE','У точки уже есть активное устройство. Для замены сначала отзовите его ключ на старом устройстве. При утере потребуется отдельное восстановление.');
- const [dev]=await db.insert(devices).values({orgId:org.id,locationId:loc.id,publicJwk,registeredBy:tgId,createdAt:now()}).returning().run();
- await audit(org.id,tgId,'device.registered',dev.id,{locationId:loc.id});
+ if(externalKiosk&&previous?.publicJwk?.x===publicJwk.x&&previous?.publicJwk?.y===publicJwk.y){
+  requireInput(previous.id===kioskDeviceIdFromPublicKey(publicJwk),'DEVICE_ID_MISMATCH','Ранее устройство привязали через старую процедуру');
+  return {id:previous.id,locationId:loc.id,alreadyLinked:true};
+ }
+ requireInput(!previous,'DEVICE_ALREADY_ACTIVE','К точке уже привязано устройство. Сначала отзовите его ключ.');
+ let data={orgId:org.id,locationId:loc.id,publicJwk,registeredBy:tgId,createdAt:now()};
+ if(externalKiosk){
+  const kioskId=kioskDeviceIdFromPublicKey(publicJwk);
+  const found=await db.select().from(devices).where(eq(devices.id,kioskId)).get();
+  requireInput(!found,'DEVICE_KEY_REUSED','Ключ устройства уже зарегистрирован или отозван. Создайте новый ключ.');
+  data={...data,id:kioskId};
+ }
+ const [dev]=await db.insert(devices).values(data).returning().run();
+ await audit(org.id,tgId,'device.registered',dev.id,{locationId:loc.id,externalKiosk});
  return {id:dev.id,locationId:loc.id};
 }
 export async function getDeviceChallenge(tgId,deviceId) {
