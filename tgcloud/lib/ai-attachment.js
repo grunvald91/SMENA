@@ -19,7 +19,7 @@ export async function analyzeOwnerAttachment(ownerId,messageRowId){
   .where(and(eq(aiMessages.id,id),eq(aiMessages.orgId,org.id))).get();
  requireInput(!!row?.fileId,'MEDIA_MISSING','Вложение не найдено');
  const desc=supportedAttachment(row);
- requireInput(!!desc&&desc.mode!=='image'||!!desc&&row.kind!=='photo','MEDIA_NOT_SUPPORTED','Данный формат обрабатывается другой процедурой');
+ requireInput(!!desc&&!(row.kind==='photo'&&desc.mode==='image'),'MEDIA_NOT_SUPPORTED','Данный формат обрабатывается другой процедурой');
  const active=await db.select().from(aiChatSettings).where(and(eq(aiChatSettings.orgId,org.id),eq(aiChatSettings.chatId,row.chatId),eq(aiChatSettings.active,1))).get();
  requireInput(!!active,'CHAT_DISABLED','Наблюдение в группе выключено');
  const file=await api.getFile({file_id:row.fileId});
