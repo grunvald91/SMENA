@@ -13,7 +13,7 @@ All collection is **opt in** per bound chat, and ownership is checked in backend
 | A. Evidence collection | chat opt-in, group messages (including media file IDs), edited messages, user/anonymous reactions, bot-created photo references; dedupe | Implemented in branch; platform tests pending |
 | B. Owner calibration | topic candidates, emoji meanings, 7/14 day review in private chat, confirm/reject/correct, provenance | Initial deterministic implementation in branch; not LLM-generated |
 | C. Provider bridge | private gateway, upstream provider API, secure limited capability, grounded hypotheses, retry/idempotency and owner configuration | Implemented in source; gateway not deployed and upstream API not tested |
-| D. Photo understanding | getFileContent, optional local redaction, authorized fallback to original image, visual checklists, evidence and failure classification | Selection contract only; no provider connected |
+| D. Photo understanding | getFileContent, gateway multimodal provider, owner-permitted original JPEG fallback, source-backed observations | Implemented on demand in branch; not platform tested or deployed |
 | E. Operational assistant | read-only tools for shifts, payroll previews, follow-up tasks, source links, permissions | Existing shift domain functions available; AI tools not connected |
 | F. Reliability and release | tests, data protection decision, migrations, webhook sync, real Android/iOS validation, measured API cost | Pending |
 
@@ -67,3 +67,9 @@ Added `tgcloud/lib/ai-batch.js`, `ai-gateway.js`, `ai-analyzer.js`, `tgcloud/end
 A batch is at most 60 messages with stable, pseudonymous participant aliases, bounded/filtered text, existing confirmed/corrected memory, reply links and emoji reactions. The model returns hypothetical claims citing opaque `m1`–`m60` references. Actual source IDs are restored exclusively inside ServGo, reviewed by the owner in private chat. Tenant-scoped analysis progress is leased and retriable; deterministic batch keys avoid most duplicate findings. Model errors must not affect QR, photographs or payroll.
 
 **Important deployment gate:** No real provider credentials, TLS for the planned gateway, safe migrations or end-to-end platform checks were available in this coding turn; no production deployment is claimed. The gateway must be provisioned and tested on synthetic data in Codespaces/VPS before publishing any of these changes. No Actions.
+
+## Phase D update — vision and first calibration (2026-10-11)
+
+New: per-owner photo permission, recent photo review UI, JPEG download through Telegram Serverless SDK, bounded original-file multimodal requests via /v1/vision and source-backed provisional AI findings. No actual provider has been contacted. First 14-day digest and weekly follow-ups are created in code: a due notification is dispatched on the next incoming message in an observed group, not on a guaranteed wall-clock schedule. Group conversations must have relevant webhook access. Code changes are not deployed and no production data was processed.
+
+**Remaining before production:** run full Node test suite, CLI safe migration dry-run and Serverless run; set up real HTTPS on ai.servgo.ru and supply operator-held provider credentials to the VPS; confirm photos reach the gateway, inspect provider data retention, protect the original-photo option. Automated AI batch processing still requires a separate reliable background worker; currently the owner runs model batches from Mini App. Do not advertise this as completely unattended monitoring yet.
