@@ -103,10 +103,13 @@ export async function prepareOwnerReview(ownerTgId,days=14){
   }).returning().run();
   created.push(finding);
  }
+ const modelFindings=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),
+  eq(aiFindings.origin,'model'),gte(aiFindings.periodEnd,start),lte(aiFindings.periodStart,end)))
+  .orderBy(desc(aiFindings.createdAt)).limit(30).all();
  return {days,groups:settings.length,messages:usable.length,limitReached:records.length===2000,
   reactionSampleLimited:perActor.length===2000||anonymous.length===2000,
   reactionsRecorded:perActor.length,anonymousUpdates:anonymous.length,
-  fullPeriod:earliest<=start,firstObservedAt:earliest,findings:created};
+  fullPeriod:earliest<=start,firstObservedAt:earliest,modelFindings:modelFindings.length,findings:[...modelFindings,...created]};
 }
 export async function decideFinding(ownerTgId,id,action,correction=''){
  const org=await requireOwner(ownerTgId),statusMap={confirm:'confirmed',reject:'rejected',correct:'corrected'};
