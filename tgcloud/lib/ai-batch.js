@@ -7,12 +7,16 @@ export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNa
  const sourceMap=Object.create(null);
  const byMessage=new Map(items.map((m,i)=>[String(m.chatId)+':'+m.messageId,'m'+(i+1)]));
  const groups=new Map();
- const names=(Array.isArray(employeeNames)?employeeNames:[]).filter(x=>typeof x==='string'&&x.trim().length>=3).sort((a,b)=>b.length-a.length).slice(0,200);
+ const names=(Array.isArray(employeeNames)?employeeNames:[]).map(x=>typeof x==='string'?{name:x,alias:'[СОТРУДНИК]'}:x)
+  .filter(x=>x&&typeof x.name==='string'&&x.name.trim().length>=3)
+  .sort((a,b)=>b.name.length-a.name.length).slice(0,200);
  function scrub(value){
   let s=redactForModel(value);
-  for(const name of names){
+  for(const person of names){
+   const escaped=person.name.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\  for(const name of names){
    const escaped=name.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-   try{s=s.replace(new RegExp(escaped,'giu'),'[СОТРУДНИК]');}catch(_){}
+   try{s=s.replace(new RegExp(escaped,'giu'),'[СОТРУДНИК]');}catch(_){}');
+   try{s=s.replace(new RegExp(escaped,'giu'),person.alias||'[СОТРУДНИК]');}catch(_){}
   }
   return s.slice(0,1100);
  }
