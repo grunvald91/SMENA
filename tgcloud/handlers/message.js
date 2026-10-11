@@ -78,7 +78,7 @@ export default async function(message){
   if(cmd.cmd==='ai_review'){
    const days=cmd.args?Number(cmd.args):14;
    const result=await prepareOwnerReview(tgId,days);
-   const lines=['Первичная проверка за '+result.days+' дней','Рабочих групп: '+result.groups+', сообщений в выборке: '+result.messages,'Сохранено пользовательских реакций: '+result.reactionsRecorded];
+   const lines=['Первичная проверка за '+result.days+' дней','Рабочих групп: '+result.groups+', сообщений в выборке: '+result.messages,'Сохранено пользовательских реакций: '+result.reactionsRecorded,'Гипотез от внешней модели: '+result.modelFindings];
    if(result.reactionSampleLimited)lines.push('Выборка реакций также может быть неполной.');
    if(!result.fullPeriod)lines.push('Наблюдение началось позднее начала периода. Выводы предварительные.');
    if(result.limitReached)lines.push('⚠️ Выборка ограничена 2000 сообщениями. Выводы неполные.');
@@ -87,7 +87,7 @@ export default async function(message){
    if(!result.findings.length){await reply(chat,'Пока недостаточно сообщений с распознаваемыми темами.');return;}
    for(const x of result.findings){
     const sources=(x.evidence||[]).slice(0,3).map(e=>'Источник: '+(evidenceUrl(e.chatId,e.messageId)||('чат '+e.chatId+', сообщение '+e.messageId)));
-    const text=['#'+x.id+' · '+x.title, x.correctedStatement||x.statement, ...sources,
+    const text=['#'+x.id+' · '+(x.origin==='model'?'ИИ-гипотеза: ':'Тема: ')+x.title, x.correctedStatement||x.statement, ...sources,
      'Для уточнения: /ai_correct '+x.id+' ваш правильный вариант'].join('\n');
     if(x.status!=='proposed'){await reply(chat,text+'\nСтатус: '+x.status);continue;}
     await api.sendMessage({chat_id:chat,text,reply_markup:{inline_keyboard:[[
