@@ -85,3 +85,18 @@ export const controlSubmissions=table('control_submissions',{
  status:text('status').notNull().default('pending'),comment:text('comment'),completedAt:integer('completed_at'),
  photos:json('photos')
 },t=>({recipient:uniqueIndex('uq_control_recipient').on(t.requestId,t.employeeId)}));
+
+ 
+// Additive transitional membership table; existing owner_tg_id remains authoritative.
+export const organizationMemberships=table('organization_memberships',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),
+ userTgId:integer('user_tg_id').notNull(),
+ role:text('role').notNull(),
+ status:text('status').notNull().default('active'),
+ createdBy:integer('created_by').notNull(),
+ createdAt:integer('created_at').notNull()
+},t=>({
+ member:uniqueIndex('uq_org_membership_org_user').on(t.orgId,t.userTgId),
+ actor:index('idx_org_membership_actor').on(t.userTgId,t.status)
+}));

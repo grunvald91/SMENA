@@ -1,6 +1,6 @@
 # Instructions for AI coding agents — ServGo Смена
 
-1. Application name is ServGo Смена, repository `grunvald91/servgo-shifts`, separate from `booking_bot` and `Ai_growth_os`.
+1. Application name is ServGo Смена, repository `grunvald91/SMENA`, separate from `booking_bot` and `Ai_growth_os`.
 2. All deployed JavaScript modules are in `tgcloud/`; handlers/endpoints flat; shared code in `tgcloud/lib/`, imports local relative with `.js`; use `sdk` and `sdk/db` only in deployed modules. Never add Node imports to Telegram runtime.
 3. Keep all authorization inside service functions, not only UI. Ownership is verified from authenticated Telegram ID. Never trust user/employee ID or salary from a client request.
 4. QR issuance must fail closed when WebCrypto or signature verification is unavailable. NEVER replace with unverified cookies, browser fingerprint, static QR or shared group password.
@@ -12,3 +12,5 @@
 10. Tests: `npm run check`, plus platform `tgcloud run`, `tgcloud migrate --dry-run` when connected. No automatic deployments.
 11. AI interface: use typed commands in `tgcloud/lib/service.js`, tenant isolation and an explicit approval step for payroll and corrections. See `docs/AI_INTERFACE.md`.
 12. Important: browser key stored in IndexedDB cannot prove physical location or block active QR relay. Don't claim otherwise.
+
+13. P1: organization_memberships is additive. Never remove owner_tg_id UNIQUE without a verified migration and backup. listMyOrganizations is read-only; do not trust any orgId from a client. Existing owner-only functions must remain until fully tenant-scoped and tested (docs/BASELINE_AND_P1.md).
