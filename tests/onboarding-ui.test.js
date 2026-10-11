@@ -4,7 +4,7 @@ import {ONBOARDING_BUTTONS,mainKeyboard,groupPickerKeyboard,validateSharedChat,i
 test('menu for new org asks only for business, existing org offers actions',()=>{
  assert.equal(mainKeyboard(false).keyboard[0][0].text,ONBOARDING_BUTTONS.create);
  assert.equal(mainKeyboard(true).keyboard[0][0].text,ONBOARDING_BUTTONS.group);
- assert.equal(mainKeyboard(true).keyboard.length,3);
+ assert.equal(mainKeyboard(true).keyboard.length,4);
 });
 test('Telegram keyboard chooses group where bot is member, without manual chat ID',()=>{
  const choice=groupPickerKeyboard(123456).keyboard[0][0];
