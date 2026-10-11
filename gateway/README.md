@@ -32,7 +32,7 @@ Use Node.js 20+ on the trusted VPS, from the repository root. Do not use GitHub 
    These values are placeholders, not real tokens or an assertion that the selected provider/model is available. Confirm HTTPS/provider contract before use. Do not commit an actual `.env`.
 4. Start the service with `node gateway/server.mjs` under the server's supervisor. Grant the process only required network access.
 5. In Telegram Mini App: owner opens **Settings → ИИ-память бизнеса**, supplies the limited gateway capability and connects. This endpoint requires validated Telegram `initData` and checks ownership server-side.
-6. In the bound work group, owner/admin uses `/ai_on`; confirm message/privacy/reaction webhook subscriptions. In owner Mini App, run **Анализировать следующую порцию**. Continue until backlog is empty. Open `/ai_review 14` in private chat to review findings, then confirm/correct/reject.
+6. In the bound work group, owner/admin uses `/ai_on`; confirm message/privacy/reaction webhook subscriptions. After initial setup the observer schedules processing from each eligible event without a manual run button. Open `/ai_review 14` in private chat to review findings, then confirm/correct/reject.
 7. Rehearse with **fictional employee data** first. Perform `npm run check`, safe SQLite dry run, platform `tgcloud run`, webhook sync, photo/QR regression and real device tests before production.
 
 ## Gateway security
@@ -48,7 +48,7 @@ Use Node.js 20+ on the trusted VPS, from the repository root. Do not use GitHub 
 
 ## Known limitations
 
-- No automatic scheduler yet: one explicit owner action analyzes up to 60 messages. This is an intentional bounded first connection to validate model results and API costs. At larger scale, run supervised background jobs outside Telegram Serverless with durable retry accounting.
+- Incoming Telegram updates automatically trigger bounded analysis; there is no guaranteed-clock scheduler yet. For production autonomy even when groups are silent, run a supervised background worker outside Telegram Serverless with durable retry accounting.
 - A revoked old active chat stops *future* collection; historical records remain until a deliberate deletion/retention workflow is built.
 - Messages edited after the analysis cursor advances are not yet reprocessed automatically.
 - Gateway capabilities are stored in the Telegram database (not the upstream model key). Validate platform DB residency, retention and operator access for actual Russian clients.
@@ -63,7 +63,7 @@ Use Node.js 20+ on the trusted VPS, from the repository root. Do not use GitHub 
 
 ## Image analysis and calibration events
 
-The owner Mini App now has an explicit switch allowing original JPEG transfer to the selected vision provider. After authorization, the owner can review the latest 20 photos separately. The code downloads JPEG bytes from Telegram Serverless, sends up to 8MB to the fixed ServGo gateway /v1/vision, and saves source-backed tentative observations. The bot does not reveal Telegram file identifiers or API keys to the model. Add AI_PROVIDER_VISION_MODEL to the gateway environment and configure the TLS reverse proxy for both /v1/analyze and /v1/vision, allowing up to 12MB POST bodies. Photo analysis is owner-triggered, not an unattended background worker.
+The owner Mini App now has an explicit switch allowing original JPEG transfer to the selected vision provider. After authorization, the owner can review the latest 20 photos separately. The code downloads JPEG bytes from Telegram Serverless, sends up to 8MB to the fixed ServGo gateway /v1/vision, and saves source-backed tentative observations. The bot does not reveal Telegram file identifiers or API keys to the model. Add AI_PROVIDER_VISION_MODEL to the gateway environment and configure the TLS reverse proxy for both /v1/analyze and /v1/vision, allowing up to 12MB POST bodies. Photo analysis is event-triggered without manual owner selection. Bot-originated photos can wait for the next group event before the worker wakes.
 
 The first 14-day calibration digest is generated and delivered on the **first incoming message after the deadline**. Follow-up digests are due seven days later. Without a Serverless scheduler this is not an exact-clock task. The message uses available model findings and deterministic candidates, but model analysis currently requires the owner to start each batch in the Mini App. A quiet chat may delay the notification; an independent secure scheduler is needed for strict time guarantees.
 
@@ -76,3 +76,5 @@ The per-tenant media queue includes photo, PDF, audio/voice, video and other Tel
 Analysis runs because Telegram has delivered an update; this is not a durable wall-clock scheduler. Bot-published photos are queued immediately but may wait for the next incoming update before processing. If no messages arrive, queued data and the 14-day review may remain pending. The next production phase must provide a separately authenticated server-side scheduled worker with retries and monitoring. Do not describe event-triggered work as guaranteed continuous background processing until that worker is deployed and verified.
 
 Owner reviews are now pushed proactively with confirm/reject buttons; opening /ai_review manually is optional. No owner intervention is required to select individual photos or launch routine model requests. Ongoing model costs, provider retention, consent to external transmission and actual Serverless timeouts have not yet been verified. This is source code only, NOT DEPLOYED.
+
+PDF, voice/audio, images and video analysis now uses /v1/media as well as /v1/vision. Configure AI_PROVIDER_AUDIO_MODEL and AI_PROVIDER_VIDEO_MODEL to enable the corresponding provider modalities; no model support is assumed without a live integration test. Unsupported formats are queued for future extractors. Actual content understanding has not been verified in production.
