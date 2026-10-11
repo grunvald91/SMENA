@@ -26,3 +26,7 @@
 13. Current onboarding stage in draft PR #8: reply-keyboard and Telegram chat_shared with server-side request_id verification. Legacy owner-only mutators are NOT multi-business-ready. Do not enable cross-business selection for payroll/actions before every path is audited and migrated.
 14. The workstation kiosk at smena.servgo.ru does not have or require a camera. Telegram Serverless must not call the ServGo VPS directly.
 15. New onboarding_sessions table is additive only; rehearse migration/backups before deploy. Keep legacy commands as fallback.
+
+17. Draft PR #8 extends kiosk pairing: new external kiosks derive a stable safe integer ID from the P-256 public key, accepted only after owner Telegram approval. Working kiosk has NO camera. Recheck signature verification and preserve old devices.
+18. Employee self-join is approved ONLY by the legacy owner of selected business; the owner must explicitly enter hourly rate. Never automatically assign a zero-hourly rate or expose pay details in group chats. Invite tokens expire, join requests are scoped, repeated approvals must fail safely.
+19. New additive employee invite tables require full tgcloud dry-run, checked backup/restore and real phone smoke tests before production. The current PR is not deployed.
