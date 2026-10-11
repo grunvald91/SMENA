@@ -4,7 +4,8 @@ import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmp
 import { rubles } from '../lib/payroll.js';
 import {captureWorkMessage,configureWorkChat,memoryStatus,prepareOwnerReview,decideFinding} from '../lib/ai-memory.js';
 import {evidenceUrl} from '../lib/ai-rules.js';
-import {maybeSendCalibrationReview,ensureCalibrationSchedule} from '../lib/ai-calibration.js';
+import {ensureCalibrationSchedule} from '../lib/ai-calibration.js';
+import {processObservedEvent} from '../lib/ai-auto.js';
 import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
 function money(input){
@@ -48,7 +49,7 @@ export default async function(message){
  if(!message?.chat?.id)return;
  const cmd=parse(message),tgId=message.from?.id,chat=message.chat.id,privateChat=message.chat.type==='private';
  if(!privateChat){
-  try{const stored=await captureWorkMessage(message);if(stored)await maybeSendCalibrationReview(chat);}catch(e){console.warn('AI message/calibration capture unavailable',e?.code||e?.name||'unknown');}
+  try{const stored=await captureWorkMessage(message);if(stored)await processObservedEvent(chat);}catch(e){console.warn('AI message/calibration capture unavailable',e?.code||e?.name||'unknown');}
  }
  if(!tgId||message.from?.is_bot||!cmd) return;
  try {
