@@ -212,6 +212,25 @@ export async function enrollDevice(tgId,locationId,publicJwk,{externalKiosk=fals
  await audit(org.id,tgId,'device.registered',dev.id,{locationId:loc.id,externalKiosk});
  return {id:dev.id,locationId:loc.id};
 }
+export async function listActiveDevices(tgId){
+ const org=await requireOwner(tgId);
+ const rows=await db.select().from(devices).where(and(eq(devices.orgId,org.id),isNull(devices.revokedAt))).all();
+ return rows.map(d=>({id:d.id,locationId:d.locationId,createdAt:d.createdAt}));
+}
+export async function ownerRevokeDevice(tgId,locationId,deviceId){
+ const org=await requireOwner(tgId);
+ requireInput(Number.isSafeInteger(locationId)&&locationId>0&&Number.isSafeInteger(deviceId)&&deviceId>0,'BAD_DEVICE','Некорректное устройство');
+ const found=await db.select().from(devices).where(and(
+  eq(devices.id,deviceId),eq(devices.locationId,locationId),eq(devices.orgId,org.id),isNull(devices.revokedAt)
+ )).get();
+ requireInput(!!found,'DEVICE_REVOKED','На выбранной точке нет такого активного устройства');
+ const changed=await db.update(devices).set({revokedAt:now()}).where(and(
+  eq(devices.id,deviceId),eq(devices.locationId,locationId),eq(devices.orgId,org.id),isNull(devices.revokedAt)
+ )).run();
+ requireInput(changed.rowsAffected===1,'REPLAY','Устройство уже отозвано');
+ await audit(org.id,tgId,'device.owner_revoked',found.id,{locationId,reason:'owner replacement'});
+ return {revoked:true,locationId};
+}
 export async function getDeviceChallenge(tgId,deviceId) {
  const org=await requireOwner(tgId);
  const dev=await db.select().from(devices).where(and(eq(devices.id,Number(deviceId)),eq(devices.orgId,org.id),isNull(devices.revokedAt))).get();
