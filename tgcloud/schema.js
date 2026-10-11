@@ -149,3 +149,10 @@ export const aiAnalysisProgress=table('ai_analysis_progress',{
  lockToken:text('lock_token'),
  updatedAt:integer('updated_at').notNull()
 });
+
+
+export const aiParticipants=table('ai_participants',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),actorKey:text('actor_key').notNull(),
+ alias:text('alias').notNull()
+},t=>({actor:uniqueIndex('uq_ai_participant_org').on(t.orgId,t.actorKey)}));
