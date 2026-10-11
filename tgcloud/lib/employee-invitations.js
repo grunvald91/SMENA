@@ -1,9 +1,10 @@
 import {db,api} from 'sdk';
-import {eq,and,desc,isNull} from 'sdk/db';
+import {eq,and,desc,lt} from 'sdk/db';
 import {employeeJoinInvites,employeeJoinRequests,employees,organizations,auditLog} from '../schema.js';
 import {requireOwner} from './service.js';
 import {requireInput,DomainError} from './errors.js';
 import {nonce} from './security.js';
+import {APPROVAL_STALE_SECONDS,staleApprovalAction} from './employee-approval-recovery.js';
 const now=()=>Math.floor(Date.now()/1000);
 const valid=id=>Number.isSafeInteger(id)&&id>0;
 async function audit(orgId,actor,action,ref){
@@ -58,6 +59,24 @@ export async function submitEmployeeName(tgId,requestId,name){
 }
 export async function pendingEmployeeRequests(tgId){
  const org=await requireOwner(tgId);
+ // Reconcile interrupted approvals when the owner opens the request list.
+ // No scheduler and no automatic retry of a currently running request.
+ const interrupted=await db.select().from(employeeJoinRequests).where(and(
+  eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.status,'approving'),
+  lt(employeeJoinRequests.updatedAt,now()-APPROVAL_STALE_SECONDS)
+ )).limit(20).all();
+ for(const req of interrupted){
+  const person=await db.select().from(employees).where(and(
+   eq(employees.orgId,org.id),eq(employees.tgId,req.userTgId)
+  )).get();
+  const action=staleApprovalAction(req,person,now());
+  if(!action)continue;
+  const changed=await db.update(employeeJoinRequests).set({
+   status:action,updatedAt:now(),...(action==='approved'?{reviewedBy:tgId,reviewedAt:now()}:{})
+  }).where(and(eq(employeeJoinRequests.id,req.id),eq(employeeJoinRequests.orgId,org.id),
+   eq(employeeJoinRequests.status,'approving'),eq(employeeJoinRequests.updatedAt,req.updatedAt))).run();
+  if(changed.rowsAffected===1)await audit(org.id,tgId,'employee.approval_recovered',req.id);
+ }
  const rows=await db.select().from(employeeJoinRequests).where(and(
   eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.status,'pending')
  )).orderBy(desc(employeeJoinRequests.createdAt)).limit(10).all();
