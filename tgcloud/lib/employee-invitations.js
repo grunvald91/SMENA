@@ -89,16 +89,31 @@ export async function approveEmployeeRequest(tgId,requestId,hourlyKopeks){
   eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.id,requestId),eq(employeeJoinRequests.status,'pending')
  )).get();
  requireInput(!!req,'NOT_FOUND','Заявка уже обработана или недоступна');
- let person=await db.select().from(employees).where(and(eq(employees.orgId,org.id),eq(employees.tgId,req.userTgId))).get();
- if(!person){
-  [person]=await db.insert(employees).values({orgId:org.id,tgId:req.userTgId,name:req.name,
-   hourlyKopeks,shiftBonusKopeks:0,active:1}).returning().run();
- }else{
-  await db.update(employees).set({active:1,hourlyKopeks}).where(and(eq(employees.id,person.id),eq(employees.orgId,org.id))).run();
+ // Claim pending approval before employee mutation: a competing reject/approve
+ // may not alter the same request. No external payment or Telegram send here.
+ const claimed=await db.update(employeeJoinRequests).set({status:'approving',updatedAt:now()}).where(and(
+  eq(employeeJoinRequests.id,req.id),eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.status,'pending')
+ )).run();
+ requireInput(claimed.rowsAffected===1,'REPLAY','Заявка уже обрабатывается');
+ let person;
+ try{
+  person=await db.select().from(employees).where(and(eq(employees.orgId,org.id),eq(employees.tgId,req.userTgId))).get();
+  if(!person){
+   [person]=await db.insert(employees).values({orgId:org.id,tgId:req.userTgId,name:req.name,
+    hourlyKopeks,shiftBonusKopeks:0,active:1}).returning().run();
+  }else{
+   await db.update(employees).set({active:1,hourlyKopeks}).where(and(eq(employees.id,person.id),eq(employees.orgId,org.id))).run();
+  }
+  const changed=await db.update(employeeJoinRequests).set({status:'approved',reviewedBy:tgId,reviewedAt:now(),updatedAt:now()})
+   .where(and(eq(employeeJoinRequests.id,req.id),eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.status,'approving'))).run();
+  requireInput(changed.rowsAffected===1,'REPLAY','Заявка уже обработана');
+ }catch(error){
+  // Safe retry on transient failures; employee unique index prevents duplicates.
+  await db.update(employeeJoinRequests).set({status:'pending',updatedAt:now()}).where(and(
+   eq(employeeJoinRequests.id,req.id),eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.status,'approving')
+  )).run();
+  throw error;
  }
- const changed=await db.update(employeeJoinRequests).set({status:'approved',reviewedBy:tgId,reviewedAt:now(),updatedAt:now()})
-  .where(and(eq(employeeJoinRequests.id,requestId),eq(employeeJoinRequests.orgId,org.id),eq(employeeJoinRequests.status,'pending'))).run();
- requireInput(changed.rowsAffected===1,'REPLAY','Заявка уже обработана');
- await audit(org.id,tgId,'employee.join_approved',requestId);
+ await audit(org.id,tgId,'employee.join_approved',req.id);
  return {organization:org.name,name:req.name,userTgId:req.userTgId,employeeId:person.id};
 }
