@@ -282,6 +282,44 @@ function dashboardReportsPanel(d){
     d.assignments.some(a=>a.status==='missing')?table(['Дата','Сотрудник','Смена'],d.assignments.filter(a=>a.status==='missing').map(a=>[reportDate(a.workDate),lookup(d.employees,a.employeeId)?.name,a.templateName])):
      ui('p',{className:'muted'},'Пропущенных назначенных смен за период не обнаружено.')));
 }
+function dashboardAiPanel(){
+ const status=ui('p',{className:'muted'},'Проверка настроек ИИ...');
+ const capability=ui('input',{type:'password',autocomplete:'new-password',placeholder:'Ключ доступа к шлюзу (не ключ нейросети)'});
+ const submit=ui('button',{type:'submit'},'Подключить шлюз');
+ const configure=ui('form',{className:'form-grid'},
+  ui('label',{className:'field'},'Служебный ключ ServGo',capability),
+  ui('p',{className:'muted'},'Этот ключ выдаёт оператор ServGo. Никогда не вводите сюда ключ OpenRouter или другой нейросети.'),
+  submit);
+ configure.addEventListener('submit',async e=>{
+  e.preventDefault();submit.disabled=true;
+  try{await call('ownerAiAnalysis',{action:'configure',capability:capability.value.trim()});
+   capability.value='';msg('ИИ-шлюз подключён');await refresh();}
+  catch(err){msg(err.message,true);}
+  finally{submit.disabled=false;}
+ });
+ const run=ui('button',{onclick:async()=>{
+  run.disabled=true;
+  try{const result=await call('ownerAiAnalysis',{action:'analyze'});
+   msg(result.processed===0?'Новых сообщений пока нет':'Обработано сообщений: '+result.processed+'. Новых гипотез: '+result.proposed+'. Проверить: /ai_review 14 в личном чате бота.');
+   await refresh();}
+  catch(err){msg(err.message,true);}finally{run.disabled=false;}
+ }},'Проанализировать следующую порцию');
+ const disable=ui('button',{className:'outline',onclick:async()=>{
+  try{await call('ownerAiAnalysis',{action:'disable'});msg('Внешний ИИ отключён');await refresh();}
+  catch(err){msg(err.message,true);}
+ }},'Отключить модель');
+ const refresh=async()=>{
+  try{const s=await call('ownerAiAnalysis',{action:'status'});
+   status.textContent=s.configured?'Шлюз подключён. Очередь: примерно '+s.pending+' сообщений. Обработано до записи №'+s.cursor+'.':'Шлюз пока не подключён. Переписка может продолжать накапливаться без внешнего анализа.';
+   run.disabled=!s.configured;disable.disabled=!s.configured;
+  }catch(err){status.textContent='Не удалось прочитать статус: '+err.message;run.disabled=true;}
+ };
+ refresh();
+ return ui('section',{className:'panel'},ui('h3',{},'ИИ-память бизнеса'),
+  ui('p',{},'ServGo собирает сообщения только в рабочих группах, где владелец включил /ai_on. Отдельный анализ моделью запускается по запросу.'),
+  status,configure,run,disable,
+  ui('p',{className:'muted'},'Один запуск обрабатывает до 60 сообщений. Результаты сохраняются как неподтверждённые гипотезы; ни смены, ни зарплаты нейросеть не изменяет.'));
+}
 function dashboardSettingsPanel(d){
  const name=textField('ФИО сотрудника');const tgId=textField('Telegram ID','number');const rate=textField('Ставка за час, ₽','number','300');
  const employeeForm=ui('form',{className:'form-grid'},name.field,tgId.field,rate.field,ui('button',{type:'submit'},'Добавить сотрудника'));
