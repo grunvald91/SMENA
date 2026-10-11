@@ -54,6 +54,11 @@ export async function callProvider(payload,{env=process.env,fetchImpl=fetch}={})
 export function createGatewayHandler({env=process.env,fetchImpl=fetch}={}){
  const hashes=String(env.AI_GATEWAY_CAPABILITY_HASHES||'').split(',').map(x=>x.trim()).filter(Boolean);
  const maxBody=140000;
+ // Local quota is a safety valve for a single gateway process. Multi-instance
+ // production deployments require durable shared usage accounting.
+ const usage=new Map();
+ const cached=new Map();
+ const dailyLimit=Math.max(1,Math.min(1000,Number(env.AI_GATEWAY_DAILY_LIMIT)||40));
  return async function(req,res){
   const send=(code,body)=>{res.writeHead(code,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(body));};
   if(req.url!=='/v1/analyze'||req.method!=='POST')return send(404,{error:'NOT_FOUND'});
@@ -67,7 +72,19 @@ export function createGatewayHandler({env=process.env,fetchImpl=fetch}={}){
    }
    const payload=JSON.parse(body);
    if(!validPayload(payload))return send(400,{error:'INVALID_PAYLOAD'});
+   const who=sha256(token).toString('hex');
+   const day=new Date().toISOString().slice(0,10);
+   const cacheKey=who+':'+createHash('sha256').update(body).digest('hex');
+   const previous=cached.get(cacheKey);
+   if(previous&&Date.now()-previous.at<900000)return send(200,previous.outcome);
+   const quotaKey=who+':'+day, count=usage.get(quotaKey)||0;
+   if(count>=dailyLimit)return send(429,{error:'DAILY_LIMIT'});
+   usage.set(quotaKey,count+1);
+   // Only retain today's counters and limited small response caches.
+   if(usage.size>1000)for(const key of usage.keys())if(!key.endsWith(':'+day))usage.delete(key);
    const outcome=await callProvider(payload,{env,fetchImpl});
+   cached.set(cacheKey,{at:Date.now(),outcome});
+   if(cached.size>200)cached.delete(cached.keys().next().value);
    return send(200,outcome);
   }catch(err){
    // NEVER log request text, authorization headers, upstream credentials or model output.
