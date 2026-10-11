@@ -11,6 +11,7 @@ import { validateTemplate,templateWindow,chooseAssignment,daysAround } from './r
 import { parseISODate } from './time.js';
 import {isShiftToken,parseKioskToken,kioskMessage} from './kiosk-token.js';
 import {shiftPhotoCaption} from './shift-caption.js';
+import {capturePublishedPhoto} from './ai-media.js';
 const now=()=>Math.floor(Date.now()/1000);
 const validId=x=>Number.isSafeInteger(Number(x))&&Number(x)>0;
 async function audit(orgId,tgId,action,refId,data={}) {
@@ -378,6 +379,9 @@ export async function completePhotoShift(tgId,intentId,selfieBase64,closeComment
    const fileId=photo.photo?.at(-1)?.file_id;
    requireInput(!!fileId&&!!photo.message_id,'TELEGRAM_PHOTO','Telegram не вернул подтверждение фотографии');
    await db.update(photoIntents).set({status:'sent',photoFileId:fileId,photoMessageId:photo.message_id}).where(eq(photoIntents.id,intent.id)).run();
+   try{await capturePublishedPhoto({orgId:intent.orgId,chatId:loc.chatId,messageId:photo.message_id,
+    employeeTgId:tgId,fileId,caption:photo.caption||note||'',at:intent.createdAt});}
+   catch(e){console.error('AI attendance media capture failed',e?.code||e?.name||'unknown');}
   }catch(e){
    // If Telegram accepted the photo but the subsequent database write failed, a retry
    // can send a duplicate. This limitation needs end-to-end recovery testing.
