@@ -56,7 +56,7 @@ export function validVisionPayload(p){
  const b=p.image.base64;
  if(typeof b!=='string'||b.length<32||b.length>10800000||!/^\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(b))return false;
  const bytes=Buffer.from(b,'base64');
- return bytes.length>=24&&bytes.length<=8000000&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
+ return bytes.length>=24&&bytes.length<=8000000&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255&&bytes[bytes.length-2]===255&&bytes[bytes.length-1]===217;
 }
 export async function callVisionProvider(payload,{env=process.env,fetchImpl=fetch}={}){
  if(!validVisionPayload(payload))throw new Error('VISION_INVALID_PAYLOAD');
