@@ -4,6 +4,7 @@ import {locations,aiChatSettings,aiMessages,aiReactions,aiReactionTotals,aiFindi
 import {requireOwner} from './service.js';
 import {requireInput} from './errors.js';
 import {normalizeWorkMessage,normalizeReactions,normalizeReactionTotals,reactionActorKey,reviewCandidates} from './ai-rules.js';
+import {enqueueMedia} from './ai-media-queue.js';
 const clock=()=>Math.floor(Date.now()/1000);
 async function monitoredGroup(chatId){
  const config=await db.select().from(aiChatSettings).where(and(eq(aiChatSettings.chatId,chatId),eq(aiChatSettings.active,1))).get();
@@ -32,6 +33,7 @@ export async function captureWorkMessage(message,{edited=false}={}){
   set:{content:values.content,kind:values.kind,fileId:values.fileId,editedAt:values.editedAt,
    replyToMessageId:values.replyToMessageId,threadId:values.threadId}
  }).run();
+ if(values.fileId)await enqueueMedia(values.chatId,values.messageId);
  return true;
 }
 export async function captureReaction(reaction){
