@@ -5,6 +5,7 @@ import {ownerOrg,requireOwner,setup,bindChat} from './service.js';
 import {DomainError,requireInput} from './errors.js';
 import {validateSharedChat,isAdministrator,canBotPostPhoto,matchOrganizationChoice} from './onboarding-ui.js';
 import {describeOrganizationSelection,chooseOrganization} from './organization-selection-service.js';
+import {startEmployeeJoin,submitEmployeeName,checkPendingEmployee,approveEmployeeRequest} from './employee-invitations.js';
 const now=()=>Math.floor(Date.now()/1000);
 const TTL=15*60;
 const validUserId=id=>Number.isSafeInteger(id)&&id>0;
@@ -94,4 +95,31 @@ export async function finishBusinessSwitch(tgId,label){
  const result=await chooseOrganization(tgId,chosen.id);
  await cancelOnboarding(tgId);
  return result.selectedOrganization;
+}
+
+export async function beginEmployeeJoinByLink(tgId,token){
+ const res=await startEmployeeJoin(tgId,token);
+ if(res.kind==='name')await storeSession(tgId,'employee_name',res.id);
+ return res;
+}
+export async function finishEmployeeJoinName(tgId,name){
+ const session=await getOnboardingSession(tgId);
+ requireInput(session?.phase==='employee_name'&&Number.isSafeInteger(session.requestId),
+  'NO_JOIN','Откройте действительную ссылку-приглашение ещё раз');
+ const result=await submitEmployeeName(tgId,session.requestId,name);
+ await cancelOnboarding(tgId);
+ return result;
+}
+export async function beginEmployeeApproval(tgId,requestId){
+ const info=await checkPendingEmployee(tgId,requestId);
+ await storeSession(tgId,'employee_rate',requestId);
+ return info;
+}
+export async function finishEmployeeApproval(tgId,hourlyKopeks){
+ const session=await getOnboardingSession(tgId);
+ requireInput(session?.phase==='employee_rate'&&Number.isSafeInteger(session.requestId),
+  'NO_JOIN','Сначала выберите заявку сотрудника');
+ const result=await approveEmployeeRequest(tgId,session.requestId,hourlyKopeks);
+ await cancelOnboarding(tgId);
+ return result;
 }
