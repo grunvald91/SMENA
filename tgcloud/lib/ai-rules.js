@@ -2,8 +2,8 @@
 const cap=(value,n=6000)=>String(value||'').slice(0,n);
 export function normalizeWorkMessage(message,at=Math.floor(Date.now()/1000)){
  if(!message?.chat?.id||!Number.isSafeInteger(message.message_id))return null;
- const file=message.photo?.at(-1)?.file_id||message.document?.file_id||message.video?.file_id||message.voice?.file_id||null;
- const kind=message.photo?'photo':message.document?'document':message.voice?'voice':message.video?'video':message.sticker?'sticker':'text';
+ const file=message.photo?.at(-1)?.file_id||message.document?.file_id||message.video?.file_id||message.voice?.file_id||message.audio?.file_id||message.animation?.file_id||message.video_note?.file_id||message.sticker?.file_id||null;
+ const kind=message.photo?'photo':message.document?'document':message.voice?'voice':message.video?'video':message.audio?'audio':message.animation?'animation':message.video_note?'video_note':message.sticker?'sticker':'text';
  return {chatId:message.chat.id,messageId:message.message_id,
   threadId:message.message_thread_id||null,authorTgId:message.from?.id||null,
   senderChatId:message.sender_chat?.id||null,replyToMessageId:message.reply_to_message?.message_id||null,
