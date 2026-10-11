@@ -4,6 +4,7 @@ import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmp
 import { rubles } from '../lib/payroll.js';
 import {captureWorkMessage,configureWorkChat,memoryStatus,prepareOwnerReview,decideFinding} from '../lib/ai-memory.js';
 import {evidenceUrl} from '../lib/ai-rules.js';
+import {maybeSendCalibrationReview,ensureCalibrationSchedule} from '../lib/ai-calibration.js';
 import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
 function money(input){
@@ -47,7 +48,7 @@ export default async function(message){
  if(!message?.chat?.id)return;
  const cmd=parse(message),tgId=message.from?.id,chat=message.chat.id,privateChat=message.chat.type==='private';
  if(!privateChat){
-  try{await captureWorkMessage(message);}catch(e){console.error('AI message capture failed',e?.code||e?.name||'unknown');}
+  try{const stored=await captureWorkMessage(message);if(stored)await maybeSendCalibrationReview(chat);}catch(e){console.warn('AI message/calibration capture unavailable',e?.code||e?.name||'unknown');}
  }
  if(!tgId||message.from?.is_bot||!cmd) return;
  try {
@@ -65,6 +66,7 @@ export default async function(message){
     const me=await api.getChatMember({chat_id:chat,user_id:tgId});
     if(!['administrator','creator'].includes(me.status))throw new DomainError('GROUP_ADMIN_REQUIRED','Включить наблюдение может владелец, который является администратором группы');
     const result=await configureWorkChat(tgId,chat,cmd.cmd==='ai_on');
+    if(result.active)try{await ensureCalibrationSchedule((await requireOwner(tgId)).id,Math.floor(Date.now()/1000));}catch(e){console.warn('AI calibration schedule not created',e?.code||e?.name||'unknown');}
     await reply(chat,result.active?'✅ Наблюдение ИИ включено для «'+result.point+'». Система сохраняет новые доступные сообщения и реакции для проверки владельцем.':'✅ Наблюдение ИИ выключено для «'+result.point+'».');return;
    }
    if(['report','problems','team','locations','setup','employee','rate','bonus','shiftbonus','hours','shiftadd','shiftassign'].includes(cmd.cmd)){
