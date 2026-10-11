@@ -4,7 +4,7 @@ import {redactForModel} from './ai-rules.js';
 
 export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNames=[],actorAliases={}}={}){
  const items=Array.isArray(messages)?messages.slice(0,60):[];
- const sourceMap={};
+ const sourceMap=Object.create(null);
  const byMessage=new Map(items.map((m,i)=>[String(m.chatId)+':'+m.messageId,'m'+(i+1)]));
  const groups=new Map();
  const names=(Array.isArray(employeeNames)?employeeNames:[]).filter(x=>typeof x==='string'&&x.trim().length>=3).sort((a,b)=>b.length-a.length).slice(0,200);
@@ -45,8 +45,8 @@ export function groundBatchFindings(untrusted,sourceMap){
   if(!item||typeof item.title!=='string'||typeof item.statement!=='string')return null;
   const title=item.title.trim(),statement=item.statement.trim();
   if(title.length<3||title.length>120||statement.length<15||statement.length>800)return null;
-  const refs=[...new Set(Array.isArray(item.sources)?item.sources:[])].slice(0,8);
-  const evidence=refs.map(ref=>sourceMap[ref]).filter(Boolean);
+  const refs=[...new Set((Array.isArray(item.sources)?item.sources:[]).filter(x=>typeof x==='string'&&/^m(?:[1-9]|[1-5][0-9]|60)$/.test(x)))].slice(0,8);
+  const evidence=refs.map(ref=>Object.hasOwn(sourceMap,ref)?sourceMap[ref]:null).filter(Boolean);
   if(!evidence.length)return null;
   return {title,statement,evidence,confidence:['low','medium','high'].includes(item.confidence)?item.confidence:'low'};
  }).filter(Boolean);
