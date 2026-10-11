@@ -78,6 +78,7 @@ export async function analyzeNextBatch(ownerTgId){
   const {payload,sourceMap}=buildPrivateBatch(messages,{confirmed,reactions:reactions.filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),actorAliases});
   const response=await callServGoAiGateway(config.capability,payload);
   const candidates=groundBatchFindings(response.findings,sourceMap);
+  requireInput(response.findings.length===0||candidates.length>0,'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
   let proposed=0;
   for(const [i,item] of candidates.entries()){
    // Stable key stops duplicate findings if a request succeeded but cursor update failed.
