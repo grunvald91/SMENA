@@ -140,7 +140,8 @@ export const aiGatewaySettings=table('ai_gateway_settings',{
  orgId:integer('org_id').primaryKey(),
  capability:text('capability').notNull(),
  active:integer('active').notNull().default(0),
- configuredAt:integer('configured_at').notNull()
+ configuredAt:integer('configured_at').notNull(),
+ allowOriginalPhotos:integer('allow_original_photos').notNull().default(0)
 });
 export const aiAnalysisProgress=table('ai_analysis_progress',{
  orgId:integer('org_id').primaryKey(),
@@ -167,3 +168,13 @@ export const aiCalibrationSchedules=table('ai_calibration_schedules',{
  busyUntil:integer('busy_until').notNull().default(0),
  claimToken:text('claim_token')
 });
+
+export const aiPhotoReviews=table('ai_photo_reviews',{
+ messageRowId:integer('message_row_id').primaryKey(),
+ orgId:integer('org_id').notNull(),
+ status:text('status').notNull().default('pending'),
+ busyUntil:integer('busy_until').notNull().default(0),
+ claimToken:text('claim_token'),
+ completedAt:integer('completed_at'),
+ result:json('result')
+},t=>({org:index('idx_ai_photo_review_org').on(t.orgId)}));
