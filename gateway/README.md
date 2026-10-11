@@ -60,3 +60,9 @@ Use Node.js 20+ on the trusted VPS, from the repository root. Do not use GitHub 
 
 - Telegram Serverless SDK: https://core.telegram.org/bots/serverless
 - OpenRouter chat completions API: https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request
+
+## Image analysis and calibration events
+
+The owner Mini App now has an explicit switch allowing original JPEG transfer to the selected vision provider. After authorization, the owner can review the latest 20 photos separately. The code downloads JPEG bytes from Telegram Serverless, sends up to 8MB to the fixed ServGo gateway /v1/vision, and saves source-backed tentative observations. The bot does not reveal Telegram file identifiers or API keys to the model. Add AI_PROVIDER_VISION_MODEL to the gateway environment and configure the TLS reverse proxy for both /v1/analyze and /v1/vision, allowing up to 12MB POST bodies. Photo analysis is owner-triggered, not an unattended background worker.
+
+The first 14-day calibration digest is generated and delivered on the **first incoming message after the deadline**. Follow-up digests are due seven days later. Without a Serverless scheduler this is not an exact-clock task. The message uses available model findings and deterministic candidates, but model analysis currently requires the owner to start each batch in the Mini App. A quiet chat may delay the notification; an independent secure scheduler is needed for strict time guarantees.
