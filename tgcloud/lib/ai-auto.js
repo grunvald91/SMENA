@@ -1,8 +1,10 @@
 import {db} from 'sdk';
 import {eq,and,inArray,lte,gt,asc} from 'sdk/db';
 import {organizations,aiChatSettings,aiGatewaySettings,aiAnalysisProgress,aiMessages,aiMediaJobs} from '../schema.js';
+import {supportedAttachment} from './ai-media-types.js';
 import {analyzeNextBatch} from './ai-analyzer.js';
 import {analyzeOwnerPhoto} from './ai-vision.js';
+import {analyzeOwnerAttachment} from './ai-attachment.js';
 import {maybeSendCalibrationReview} from './ai-calibration.js';
 import {pendingChangedMessages} from './ai-dirty.js';
 
@@ -25,33 +27,38 @@ export async function processObservedEvent(chatId,{force=false}={}){
 
   // Durable FIFO processing. Files not supported by the current extractor remain
   // in awaiting_extractor, never silently marked analyzed.
-  if(config.allowOriginalPhotos===1){
+  if(config.allowOriginalPhotos===1||config.allowOriginalFiles===1){
    const jobs=await db.select().from(aiMediaJobs)
-    .where(and(eq(aiMediaJobs.orgId,current.orgId),eq(aiMediaJobs.kind,'photo'),
+    .where(and(eq(aiMediaJobs.orgId,current.orgId),
       inArray(aiMediaJobs.status,['pending','error']),lte(aiMediaJobs.nextAttemptAt,clock())))
-    .orderBy(asc(aiMediaJobs.messageRowId)).limit(1).all();
-   const job=jobs[0];
-   if(job){
+    .orderBy(asc(aiMediaJobs.messageRowId)).limit(40).all();
+   const chats=await db.select().from(aiChatSettings)
+    .where(and(eq(aiChatSettings.orgId,org.id),eq(aiChatSettings.active,1))).all();
+   const allowedChats=new Set(chats.map(x=>x.chatId));
+   for(const job of jobs){
+    if(!allowedChats.has(job.chatId))continue;
     const message=await db.select().from(aiMessages)
-     .where(and(eq(aiMessages.orgId,current.orgId),eq(aiMessages.id,job.messageRowId))).get();
-    const active=message&&await db.select().from(aiChatSettings)
-     .where(and(eq(aiChatSettings.chatId,message.chatId),eq(aiChatSettings.orgId,org.id),eq(aiChatSettings.active,1))).get();
-    if(active){
-     try{
-      await analyzeOwnerPhoto(org.ownerTgId,job.messageRowId);
-      await db.update(aiMediaJobs).set({status:'done',updatedAt:clock()})
-       .where(and(eq(aiMediaJobs.messageRowId,job.messageRowId),eq(aiMediaJobs.orgId,org.id))).run();
-      outcome.photo=true;
-     }catch(e){
-      const attempts=(job.attempts||0)+1;
-      await db.update(aiMediaJobs).set({status:'error',attempts,
-       nextAttemptAt:clock()+Math.min(24*3600,PHOTO_BACKOFF*Math.min(12,attempts)),
-       updatedAt:clock()}).where(and(eq(aiMediaJobs.messageRowId,job.messageRowId),eq(aiMediaJobs.orgId,org.id))).run();
-      console.warn('AI photo processing deferred',e?.code||e?.name||'unknown');
-     }
-     // Never start an additional slow provider call in this same Telegram update.
-     return outcome;
+     .where(and(eq(aiMessages.orgId,org.id),eq(aiMessages.id,job.messageRowId))).get();
+    const mode=supportedAttachment(message);
+    if(!mode)continue;
+    const permitted=mode.mode==='image'&&message.kind==='photo'?
+      config.allowOriginalPhotos===1:config.allowOriginalFiles===1;
+    if(!permitted)continue;
+    try{
+     if(mode.mode==='image'&&message.kind==='photo')await analyzeOwnerPhoto(org.ownerTgId,job.messageRowId);
+     else await analyzeOwnerAttachment(org.ownerTgId,job.messageRowId);
+     await db.update(aiMediaJobs).set({status:'done',updatedAt:clock()})
+      .where(and(eq(aiMediaJobs.messageRowId,job.messageRowId),eq(aiMediaJobs.orgId,org.id))).run();
+     outcome.photo=true;
+    }catch(e){
+     const attempts=(job.attempts||0)+1;
+     await db.update(aiMediaJobs).set({status:'error',attempts,
+      nextAttemptAt:clock()+Math.min(24*3600,PHOTO_BACKOFF*Math.min(12,attempts)),
+      updatedAt:clock()}).where(and(eq(aiMediaJobs.messageRowId,job.messageRowId),eq(aiMediaJobs.orgId,org.id))).run();
+     console.warn('AI attachment processing deferred',e?.code||e?.name||'unknown');
     }
+    // One slow model call at most in a Telegram event.
+    return outcome;
    }
   }
 
