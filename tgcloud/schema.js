@@ -128,5 +128,24 @@ export const aiFindings=table('ai_findings',{
  evidence:json('evidence').notNull(),periodStart:integer('period_start').notNull(),
  periodEnd:integer('period_end').notNull(),
  reviewedBy:integer('reviewed_by'),reviewedAt:integer('reviewed_at'),
- correctedStatement:text('corrected_statement'),createdAt:integer('created_at').notNull()
-},t=>({review:index('idx_ai_findings_org_status').on(t.orgId,t.status)}));
+ correctedStatement:text('corrected_statement'),createdAt:integer('created_at').notNull(),
+ origin:text('origin').notNull().default('rules'),modelBatchKey:text('model_batch_key')
+},t=>({review:index('idx_ai_findings_org_status').on(t.orgId,t.status),
+ batch:uniqueIndex('uq_ai_model_batch_key').on(t.orgId,t.modelBatchKey)}));
+
+
+// Provider keys never enter Telegram Serverless. This per-organization *gateway*
+// capability is revocable and limited by the ServGo gateway's allowlist/quota.
+export const aiGatewaySettings=table('ai_gateway_settings',{
+ orgId:integer('org_id').primaryKey(),
+ capability:text('capability').notNull(),
+ active:integer('active').notNull().default(0),
+ configuredAt:integer('configured_at').notNull()
+});
+export const aiAnalysisProgress=table('ai_analysis_progress',{
+ orgId:integer('org_id').primaryKey(),
+ cursorId:integer('cursor_id').notNull().default(0),
+ busyUntil:integer('busy_until').notNull().default(0),
+ lockToken:text('lock_token'),
+ updatedAt:integer('updated_at').notNull()
+});
