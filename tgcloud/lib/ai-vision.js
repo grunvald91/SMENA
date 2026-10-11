@@ -51,7 +51,7 @@ export async function analyzeOwnerPhoto(ownerId,messageRowId){
   .onConflictDoNothing().run();
  const t=now(),claim=nonce(20);
  const taken=await db.update(aiPhotoReviews).set({status:'processing',busyUntil:t+120,claimToken:claim})
-  .where(and(eq(aiPhotoReviews.messageRowId,id),eq(aiPhotoReviews.orgId,org.id),lte(aiPhotoReviews.busyUntil,t))).run();
+  .where(and(eq(aiPhotoReviews.messageRowId,id),eq(aiPhotoReviews.orgId,org.id),inArray(aiPhotoReviews.status,['pending','processing','error']),lte(aiPhotoReviews.busyUntil,t))).run();
  requireInput(taken.rowsAffected===1,'AI_BUSY','Это фото уже анализируется');
  try{
   const file=await api.getFile({file_id:image.fileId});
