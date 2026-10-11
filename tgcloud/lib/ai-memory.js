@@ -5,6 +5,7 @@ import {requireOwner} from './service.js';
 import {requireInput} from './errors.js';
 import {normalizeWorkMessage,normalizeReactions,normalizeReactionTotals,reactionActorKey,reviewCandidates} from './ai-rules.js';
 import {enqueueMedia} from './ai-media-queue.js';
+import {markMessageChanged} from './ai-dirty.js';
 const clock=()=>Math.floor(Date.now()/1000);
 async function monitoredGroup(chatId){
  const config=await db.select().from(aiChatSettings).where(and(eq(aiChatSettings.chatId,chatId),eq(aiChatSettings.active,1))).get();
@@ -34,6 +35,7 @@ export async function captureWorkMessage(message,{edited=false}={}){
    replyToMessageId:values.replyToMessageId,threadId:values.threadId}
  }).run();
  if(values.fileId)await enqueueMedia(values.chatId,values.messageId);
+ if(edited)await markMessageChanged(config.orgId,values.chatId,values.messageId);
  return true;
 }
 export async function captureReaction(reaction){
@@ -46,6 +48,7 @@ export async function captureReaction(reaction){
   target:[aiReactions.chatId,aiReactions.messageId,aiReactions.actorKey],
   set:{reactions:values.reactions,updatedAt:values.updatedAt}
  }).run();
+ await markMessageChanged(config.orgId,chatId,messageId);
  return true;
 }
 export async function captureAnonymousReactionCount(reaction){
@@ -58,6 +61,7 @@ export async function captureAnonymousReactionCount(reaction){
   target:[aiReactionTotals.chatId,aiReactionTotals.messageId],
   set:{reactions:values.reactions,updatedAt:values.updatedAt}
  }).run();
+ await markMessageChanged(config.orgId,chatId,messageId);
  return true;
 }
 export async function memoryStatus(ownerTgId){
