@@ -1,9 +1,9 @@
 // Pure access policy. Source rows MUST be loaded by the trusted server.
 export const ORGANIZATION_ROLES=Object.freeze(['owner','manager','employee']);
 const PERMISSIONS=Object.freeze({
-  owner:Object.freeze(['organization.view','employees.manage','schedule.manage','locations.manage','devices.manage','payroll.view','roles.manage']),
-  manager:Object.freeze(['organization.view','employees.manage','schedule.manage','locations.manage','devices.manage']),
-  employee:Object.freeze(['self.view'])
+  owner:Object.freeze(['organization.select','organization.view','employees.manage','schedule.manage','locations.manage','devices.manage','payroll.view','roles.manage']),
+  manager:Object.freeze(['organization.select','organization.view','employees.manage','schedule.manage','locations.manage','devices.manage']),
+  employee:Object.freeze(['organization.select','self.view'])
 });
 export function validTelegramId(value){
   return typeof value==='number'&&Number.isSafeInteger(value)&&value>0;
