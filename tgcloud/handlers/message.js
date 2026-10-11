@@ -77,17 +77,23 @@ export default async function(message){
   if(cmd.cmd==='ai_review'){
    const days=cmd.args?Number(cmd.args):14;
    const result=await prepareOwnerReview(tgId,days);
-   const lines=['Проверка понимания бизнеса за '+result.days+' дней','Групп: '+result.groups+', сообщений в выборке: '+result.messages];
-   if(!result.fullPeriod)lines.push('Наблюдение началось позднее начала периода; данных пока недостаточно для полного обзора.');
-   if(result.limitReached)lines.push('⚠️ Достигнут лимит выборки 2000 сообщений: обзор неполный.');
-   lines.push('Это темы для проверки, а не подтверждённые выводы ИИ.');
+   const lines=['Первичная проверка за '+result.days+' дней','Рабочих групп: '+result.groups+', сообщений в выборке: '+result.messages];
+   if(!result.fullPeriod)lines.push('Наблюдение началось позднее начала периода. Выводы предварительные.');
+   if(result.limitReached)lines.push('⚠️ Выборка ограничена 2000 сообщениями. Выводы неполные.');
+   lines.push('Ниже — темы из переписки, а НЕ установленные ИИ факты. Подтвердите каждую отдельно.');
+   await reply(chat,lines.join('\n'));
+   if(!result.findings.length){await reply(chat,'Пока недостаточно сообщений с распознаваемыми темами.');return;}
    for(const x of result.findings){
-    lines.push('', '#'+x.id+' · '+x.title+' ['+x.status+']', x.correctedStatement||x.statement);
-    for(const evidence of (x.evidence||[]).slice(0,3))lines.push('Источник: чат '+evidence.chatId+', сообщение '+evidence.messageId);
+    const sources=(x.evidence||[]).slice(0,3).map(e=>'Источник: чат '+e.chatId+', сообщение '+e.messageId);
+    const text=['#'+x.id+' · '+x.title, x.correctedStatement||x.statement, ...sources,
+     'Для уточнения: /ai_correct '+x.id+' ваш правильный вариант'].join('\n');
+    if(x.status!=='proposed'){await reply(chat,text+'\nСтатус: '+x.status);continue;}
+    await api.sendMessage({chat_id:chat,text,reply_markup:{inline_keyboard:[[
+     {text:'✅ Верно',callback_data:'ai:confirm:'+x.id},
+     {text:'❌ Неверно',callback_data:'ai:reject:'+x.id}
+    ]]}});
    }
-   if(result.findings.length===0)lines.push('Пока недостаточно сообщений с распознаваемыми темами.');
-   lines.push('', 'Подтвердить: /ai_confirm ID', 'Отклонить: /ai_reject ID','Исправить: /ai_correct ID правильная формулировка');
-   await reply(chat,lines.join('\n'));return;
+   return;
   }
   if(['ai_confirm','ai_reject','ai_correct'].includes(cmd.cmd)){
    const m=/^(\d+)(?:\s+([\s\S]+))?$/.exec(cmd.args);
