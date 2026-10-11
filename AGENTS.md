@@ -22,3 +22,7 @@
 15. A selected organization is NOT YET consumed by legacy owner-only commands. Do not expose an operational org switcher in Mini App or Telegram menu until the command/endpoint authorization context is migrated end to end. Managers and employees may select their own organization without receiving payroll or roles permissions.
 16. `organizations.owner_tg_id UNIQUE` must NOT be removed in this PR. A separate reviewed migration with verified backup/restore is mandatory before true multi-business ownership.
 17. Any new Telegram action touching an organization requires an explicit server-side organization scope and RBAC. Do not derive business access from group membership, chat titles, display name, or a client-supplied ID alone.
+
+13. Current onboarding stage in draft PR #8: reply-keyboard and Telegram chat_shared with server-side request_id verification. Legacy owner-only mutators are NOT multi-business-ready. Do not enable cross-business selection for payroll/actions before every path is audited and migrated.
+14. The workstation kiosk at smena.servgo.ru does not have or require a camera. Telegram Serverless must not call the ServGo VPS directly.
+15. New onboarding_sessions table is additive only; rehearse migration/backups before deploy. Keep legacy commands as fallback.
