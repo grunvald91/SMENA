@@ -6,6 +6,7 @@ import {requireInput} from './errors.js';
 import {nonce} from './security.js';
 import {buildPrivateBatch,groundBatchFindings} from './ai-batch.js';
 import {callServGoAiGateway} from './ai-gateway.js';
+import {pendingChangedMessages,finishChangedMessages} from './ai-dirty.js';
 const clock=()=>Math.floor(Date.now()/1000);
 
 export async function configureAiGateway(ownerTgId,capability,enabled=true){
@@ -47,18 +48,28 @@ export async function analyzeNextBatch(ownerTgId){
  requireInput(got.rowsAffected===1,'AI_BUSY','Предыдущая проверка ещё выполняется');
  try{
   const progress=await db.select().from(aiAnalysisProgress).where(eq(aiAnalysisProgress.orgId,org.id)).get();
+  const dirty=await pendingChangedMessages(org.id,10);
   const page=await db.select().from(aiMessages).where(and(eq(aiMessages.orgId,org.id),gt(aiMessages.id,progress.cursorId)))
-   .orderBy(asc(aiMessages.id)).limit(60).all();
-  if(!page.length)return {processed:0,proposed:0,remaining:false};
+   .orderBy(asc(aiMessages.id)).limit(60-dirty.length).all();
+  if(!page.length&&!dirty.length)return {processed:0,proposed:0,remaining:false};
   const authorized=new Set(enabled.map(c=>c.chatId));
-  const messages=page.filter(m=>authorized.has(m.chatId));
-  const lastId=page.at(-1).id;
+  const changed=[];
+  for(const event of dirty){
+   const message=await db.select().from(aiMessages).where(and(eq(aiMessages.orgId,org.id),
+    eq(aiMessages.chatId,event.chatId),eq(aiMessages.messageId,event.messageId))).get();
+   if(message)changed.push(message);
+  }
+  const unique=new Map();
+  for(const m of [...page,...changed])if(authorized.has(m.chatId))unique.set(m.id,m);
+  const messages=[...unique.values()];
+  const lastId=page.at(-1)?.id||progress.cursorId;
   if(!messages.length){
    await db.update(aiAnalysisProgress).set({cursorId:lastId,updatedAt:clock()})
     .where(and(eq(aiAnalysisProgress.orgId,org.id),eq(aiAnalysisProgress.lockToken,lock))).run();
+   await finishChangedMessages(org.id,dirty);
    return {processed:page.length,proposed:0,skipped:page.length};
   }
-  const first=messages[0].sentAt,last=messages.at(-1).sentAt;
+  const first=Math.min(...messages.map(x=>x.sentAt)),last=Math.max(...messages.map(x=>x.sentAt));
   const confirmed=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),inArray(aiFindings.status,['confirmed','corrected'])))
    .orderBy(desc(aiFindings.reviewedAt)).limit(25).all();
   const ids=messages.map(x=>x.messageId);
@@ -83,7 +94,7 @@ export async function analyzeNextBatch(ownerTgId){
   let proposed=0;
   for(const [i,item] of candidates.entries()){
    // Stable key stops duplicate findings if a request succeeded but cursor update failed.
-   const batchKey=page[0].id+':'+lastId+':'+i;
+   const batchKey='p'+(page[0]?.id||progress.cursorId)+':'+lastId+':d'+dirty.map(x=>x.id+'-'+x.updatedAtMs).join('.')+':'+i;
    const existing=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),eq(aiFindings.modelBatchKey,batchKey))).get();
    if(existing)continue;
    await db.insert(aiFindings).values({orgId:org.id,title:item.title,statement:item.statement,
@@ -94,7 +105,8 @@ export async function analyzeNextBatch(ownerTgId){
   const changed=await db.update(aiAnalysisProgress).set({cursorId:lastId,updatedAt:clock()})
    .where(and(eq(aiAnalysisProgress.orgId,org.id),eq(aiAnalysisProgress.lockToken,lock),eq(aiAnalysisProgress.cursorId,progress.cursorId))).run();
   requireInput(changed.rowsAffected===1,'AI_PROGRESS_CONFLICT','Прогресс анализа изменился');
-  return {processed:page.length,proposed,through:lastId,modelUsed:true};
+  await finishChangedMessages(org.id,dirty);
+  return {processed:page.length,rechecked:dirty.length,proposed,through:lastId,modelUsed:true};
  }finally{
   // Lock does not prevent normal attendance/QR operations, even on API failure.
   await db.update(aiAnalysisProgress).set({busyUntil:0,lockToken:null,updatedAt:clock()})
