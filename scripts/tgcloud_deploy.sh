@@ -25,6 +25,12 @@ if [[ "${SMENA_BACKUP_VERIFIED:-}" != "1" ]]; then
   exit 10
 fi
 
+if [[ "${SMENA_MIGRATION_REVIEWED:-}" != "1" ]]; then
+  echo "СТОП: проверьте результат tgcloud migrate --dry-run --local и подтвердите отсутствие warning/manual и destructive diff."
+  echo "После ручной проверки добавьте SMENA_MIGRATION_REVIEWED=1 к команде запуска."
+  exit 11
+fi
+
 echo "Сначала применяем только безопасные ADDITIVE изменения к реальной БД."
 echo "Так действующий бот продолжит работать, даже если последующий push будет отклонён."
 "$TG" migrate --local --safe
