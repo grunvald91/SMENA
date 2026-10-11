@@ -2,7 +2,7 @@
 // Source IDs, chat IDs, telegram IDs and file IDs stay on the ServGo side.
 import {redactForModel} from './ai-rules.js';
 
-export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNames=[]}={}){
+export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNames=[],actorAliases={}}={}){
  const items=Array.isArray(messages)?messages.slice(0,60):[];
  const sourceMap={};
  const byMessage=new Map(items.map((m,i)=>[String(m.chatId)+':'+m.messageId,'m'+(i+1)]));
@@ -29,7 +29,7 @@ export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNa
   const ref='m'+(i+1),key=String(m.chatId)+':'+m.messageId;
   sourceMap[ref]={chatId:m.chatId,messageId:m.messageId,sentAt:m.sentAt};
   if(!groups.has(String(m.chatId)))groups.set(String(m.chatId),'точка-'+(groups.size+1));
-  return {ref,group:groups.get(String(m.chatId)),day:new Date(m.sentAt*1000).toISOString().slice(0,10),
+  return {ref,group:groups.get(String(m.chatId)),actor:actorAliases[m.authorTgId?'u:'+m.authorTgId:m.senderChatId?'c:'+m.senderChatId:'']||'неизвестен',day:new Date(m.sentAt*1000).toISOString().slice(0,10),
    kind:['text','photo','video','voice','document','sticker'].includes(m.kind)?m.kind:'other',
    replyTo:byMessage.get(String(m.chatId)+':'+m.replyToMessageId)||null,
    text:scrub(m.content||''),reactions:reactionIndex.get(key)||[]};
