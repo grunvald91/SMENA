@@ -48,7 +48,7 @@ export async function analyzeOwnerPhoto(ownerId,messageRowId){
  const previous=await db.select().from(aiPhotoReviews).where(and(eq(aiPhotoReviews.orgId,org.id),eq(aiPhotoReviews.messageRowId,id))).get();
  if(previous?.status==='done')return {alreadyDone:true,...previous.result};
  if(!previous)await db.insert(aiPhotoReviews).values({messageRowId:id,orgId:org.id,status:'pending',busyUntil:0})
-  .onConflictDoNothing().run();
+  .onConflictDoUpdate({target:aiPhotoReviews.messageRowId,set:{orgId:org.id}}).run();
  const t=now(),claim=nonce(20);
  const taken=await db.update(aiPhotoReviews).set({status:'processing',busyUntil:t+120,claimToken:claim})
   .where(and(eq(aiPhotoReviews.messageRowId,id),eq(aiPhotoReviews.orgId,org.id),inArray(aiPhotoReviews.status,['pending','processing','error']),lte(aiPhotoReviews.busyUntil,t))).run();
