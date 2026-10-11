@@ -36,6 +36,13 @@ CREATE TABLE user_organization_selections (
  org_id INTEGER NOT NULL,
  updated_at INTEGER NOT NULL
 );
+CREATE TABLE onboarding_sessions (
+ user_tg_id INTEGER PRIMARY KEY,
+ phase TEXT NOT NULL,
+ request_id INTEGER,
+ expires_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL
+);
 """
 
 def initialize(db):
@@ -70,6 +77,18 @@ def initialize(db):
         raise AssertionError("Duplicate membership accepted")
     db.execute("INSERT INTO user_organization_selections "
                "(user_tg_id,org_id,updated_at) VALUES (?,?,?)", (7654322, 42, 2000))
+    db.execute("INSERT INTO onboarding_sessions "
+               "(user_tg_id,phase,request_id,expires_at,updated_at) VALUES (?,?,?,?,?)",
+               (7654321, "choose_group", 991, 9999, 1000))
+    assert db.execute("SELECT phase,request_id FROM onboarding_sessions").fetchone() == ("choose_group", 991)
+    try:
+        db.execute("INSERT INTO onboarding_sessions "
+                   "(user_tg_id,phase,request_id,expires_at,updated_at) VALUES (?,?,?,?,?)",
+                   (7654321, "choose_group", 992, 9999, 1000))
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError("Duplicate onboarding session accepted")
     assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     db.commit()
 
