@@ -100,3 +100,10 @@ export const organizationMemberships=table('organization_memberships',{
  member:uniqueIndex('uq_org_membership_org_user').on(t.orgId,t.userTgId),
  actor:index('idx_org_membership_actor').on(t.userTgId,t.status)
 }));
+
+// Additive user preference. NOT a permission grant: always re-check active memberships.
+export const userOrganizationSelections=table('user_organization_selections',{
+ userTgId:integer('user_tg_id').primaryKey(),
+ orgId:integer('org_id').notNull(),
+ updatedAt:integer('updated_at').notNull()
+});
