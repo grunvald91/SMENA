@@ -289,7 +289,7 @@ function dashboardAiPanel(){
  const connect=ui('button',{type:'submit'},'Подключить автоматический анализ');
  const form=ui('form',{className:'form-grid'},
   ui('label',{className:'field'},'Служебный ключ ServGo',capability),
-  ui('label',{className:'field'},photoOptIn,'Разрешить автоматический анализ рабочих фотографий, включая передачу исходных снимков провайдеру, когда подготовка недоступна'),
+  ui('label',{className:'field'},photoOptIn,'Разрешить автоматический анализ рабочих фотографий, документов, голосовых сообщений и других поддерживаемых медиафайлов, включая передачу оригиналов провайдеру, когда подготовка недоступна'),
   ui('p',{className:'muted'},'Разрешение задаётся один раз при подключении. Модель не получает Telegram ID и ключи бота.'),
   connect);
  form.addEventListener('submit',async e=>{
