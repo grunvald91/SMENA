@@ -75,6 +75,24 @@ export async function prepareOwnerReview(ownerTgId,days=14){
  const usable=records.filter(m=>settings.some(s=>s.chatId===m.chatId));
  const earliest=Math.min(...settings.map(s=>s.enabledAt));
  const candidates=reviewCandidates(usable);
+ // Reactions are evidence, not inherently agreement or task completion.
+ const keys=new Set(usable.map(m=>m.chatId+':'+m.messageId));
+ const perActor=(await db.select().from(aiReactions).where(eq(aiReactions.orgId,org.id)).orderBy(desc(aiReactions.updatedAt)).limit(2000).all())
+  .filter(r=>keys.has(r.chatId+':'+r.messageId));
+ const anonymous=(await db.select().from(aiReactionTotals).where(eq(aiReactionTotals.orgId,org.id)).orderBy(desc(aiReactionTotals.updatedAt)).limit(2000).all())
+  .filter(r=>keys.has(r.chatId+':'+r.messageId));
+ const emojiCount=new Map();
+ for(const row of perActor)for(const reaction of (row.reactions||[])){
+  if(reaction.type!=='emoji')continue;
+  emojiCount.set(reaction.emoji,(emojiCount.get(reaction.emoji)||0)+1);
+ }
+ const topReactions=[...emojiCount].sort((a,b)=>b[1]-a[1]).slice(0,3);
+ for(const [emoji,count] of topReactions){
+  const sampled=perActor.filter(row=>(row.reactions||[]).some(x=>x.type==='emoji'&&x.emoji===emoji)).slice(0,5);
+  candidates.push({title:'Что означает реакция '+emoji,
+   statement:'В доступных сообщениях реакция '+emoji+' встречается '+count+' раз среди сохранённых пользовательских реакций. Уточните, что она обычно означает: прочитано, принято, выполнено или другое.',
+   evidence:sampled.map(r=>({chatId:r.chatId,messageId:r.messageId,sentAt:r.updatedAt})),count});
+ }
  const created=[];
  for(const suggestion of candidates){
   const existing=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),eq(aiFindings.title,suggestion.title),gte(aiFindings.periodStart,start-86400),lte(aiFindings.periodEnd,end))).orderBy(desc(aiFindings.createdAt)).limit(1).get();
@@ -86,6 +104,8 @@ export async function prepareOwnerReview(ownerTgId,days=14){
   created.push(finding);
  }
  return {days,groups:settings.length,messages:usable.length,limitReached:records.length===2000,
+  reactionSampleLimited:perActor.length===2000||anonymous.length===2000,
+  reactionsRecorded:perActor.length,anonymousUpdates:anonymous.length,
   fullPeriod:earliest<=start,firstObservedAt:earliest,findings:created};
 }
 export async function decideFinding(ownerTgId,id,action,correction=''){
