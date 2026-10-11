@@ -2,7 +2,7 @@ import {db,api,InputFile,BotApiError} from 'sdk';
 import {eq,and,isNull,desc,inArray} from 'sdk/db';
 import {organizations,locations,employees,shifts,devices,controlRequests,controlSubmissions,auditLog} from '../schema.js';
 import {requireOwner,ownerOrg,resolvePhotoQr} from './service.js';
-import {capturePublishedPhoto} from './ai-memory.js';
+import {capturePublishedPhoto} from './ai-media.js';
 import {requireInput} from './errors.js';
 import {nonce} from './security.js';
 import {validateCloseComment} from './schedule.js';
