@@ -19,3 +19,20 @@ export async function callServGoAiGateway(capability,payload){
  if(!answer||!Array.isArray(answer.findings))throw new Error('AI_INVALID_RESPONSE');
  return {findings:answer.findings.slice(0,8),usage:answer.usage||null};
 }
+
+export async function callServGoVisionGateway(capability,payload){
+ requireInput(typeof capability==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(capability),'AI_NOT_CONFIGURED','ИИ-шлюз не настроен');
+ requireInput(payload?.mode==='vision'&&payload?.sourceRef==='m1'&&payload.image?.mime==='image/jpeg'&&
+  typeof payload.image.base64==='string'&&payload.image.base64.length<=2100000,'AI_INVALID_IMAGE','Некорректное изображение');
+ const response=await sdkFetch('https://ai.servgo.ru/v1/vision',{method:'POST',headers:{
+  'content-type':'application/json','authorization':'Bearer '+capability
+ },body:JSON.stringify(payload)});
+ if(!response.ok){
+  if(response.status===401||response.status===403)throw new Error('AI_GATEWAY_UNAUTHORIZED');
+  if(response.status===429)throw new Error('AI_GATEWAY_RATE_LIMIT');
+  throw new Error('AI_VISION_UNAVAILABLE');
+ }
+ const body=await response.json();
+ if(!Array.isArray(body?.findings))throw new Error('AI_INVALID_RESPONSE');
+ return {findings:body.findings.slice(0,6)};
+}
