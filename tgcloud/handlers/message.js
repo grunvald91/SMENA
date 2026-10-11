@@ -77,7 +77,8 @@ export default async function(message){
   if(cmd.cmd==='ai_review'){
    const days=cmd.args?Number(cmd.args):14;
    const result=await prepareOwnerReview(tgId,days);
-   const lines=['Первичная проверка за '+result.days+' дней','Рабочих групп: '+result.groups+', сообщений в выборке: '+result.messages];
+   const lines=['Первичная проверка за '+result.days+' дней','Рабочих групп: '+result.groups+', сообщений в выборке: '+result.messages,'Сохранено пользовательских реакций: '+result.reactionsRecorded];
+   if(result.reactionSampleLimited)lines.push('Выборка реакций также может быть неполной.');
    if(!result.fullPeriod)lines.push('Наблюдение началось позднее начала периода. Выводы предварительные.');
    if(result.limitReached)lines.push('⚠️ Выборка ограничена 2000 сообщениями. Выводы неполные.');
    lines.push('Ниже — темы из переписки, а НЕ установленные ИИ факты. Подтвердите каждую отдельно.');
