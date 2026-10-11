@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import './style.css';
 import {isShiftToken} from '../tgcloud/lib/kiosk-token.js';
-import {startTelegramQrScan} from './qr-scan.js';
+import {startTelegramQrScan,startPairingQrScan} from './qr-scan.js';
 import {capturePortrait} from './portrait.js';
 import {createControlUI} from './control.js';
 import {reportDate,reportMoment,reportRange} from '../tgcloud/lib/report-format.js';
@@ -359,10 +359,28 @@ function renderHome(){
     element('p',{className:'muted'},'Только одно устройство на точку. Для замены нужен отзыв с подписанным ключом старого устройства.'),
     element('button',{onclick:async()=>{try{await enroll(Number(choices.value));}catch(e){msg(e.message,true);}}},'Зарегистрировать это устройство'));
   if(state.device){box.append(element('button',{className:'outline',onclick:()=>displayKiosk().catch(e=>msg(e.message,true))},'Показать QR этого устройства'));}
-  const pairing=element('textarea',{rows:3,placeholder:'Код pk1_ с сайта smena.servgo.ru'});
+  const pairing=element('textarea',{rows:3,placeholder:'Код pk1_ с рабочего экрана'});
   const paired=element('p',{className:'notice'});
-  box.append(element('h2',{},'QR-экран на smena.servgo.ru'),element('p',{},'Откройте сайт на рабочем устройстве, создайте код регистрации и вставьте его сюда. Выберите рабочую точку выше.'),pairing,
-   element('button',{onclick:async()=>{try{const r=await call('enrollDevice',{locationId:Number(choices.value),pairingCode:pairing.value});paired.textContent=`Устройство зарегистрировано. Введите на рабочем экране ID: ${r.id}`;pairing.value='';}catch(e){msg(e.message,true);}}},'Привязать рабочий экран'),paired);
+  let pairingBusy=false;
+  async function confirmPairing(code){
+   if(pairingBusy)return;
+   const locationId=Number(choices.value);
+   if(!Number.isSafeInteger(locationId)||locationId<=0)throw new Error('Выберите рабочую точку.');
+   pairingBusy=true;
+   try{
+    const res=await call('enrollDevice',{locationId,pairingCode:code});
+    paired.textContent=res.alreadyLinked?'Экран уже подключён. Можно продолжать работу.':'✅ Экран подключён! На рабочем устройстве нажмите «Показать рабочий QR».';
+    pairing.value='';
+   }finally{pairingBusy=false;}
+  }
+  const manual=element('details',{},element('summary',{},'Не получается сканировать? Вставьте код вручную'),
+   pairing,element('button',{className:'outline',onclick:()=>confirmPairing(pairing.value.trim()).catch(e=>msg(e.message,true))},'Подключить по коду'));
+  box.append(element('h2',{},'Подключить рабочий QR-экран'),
+   element('p',{},'Откройте smena.servgo.ru на компьютере или планшете. Камера на нём не нужна. Выберите точку выше и отсканируйте её регистрационный QR камерой своего телефона.'),
+   element('button',{onclick:()=>{try{startPairingQrScan(T,{
+    onCode:code=>confirmPairing(code).catch(e=>msg(e.message,true)),
+    onInvalid:()=>T.showAlert?.('Нужен QR подключения с рабочего экрана smena.servgo.ru.')
+   });}catch(e){msg(e.message,true);}}},'Сканировать код подключения'),manual,paired);
   const revokeProof=element('textarea',{rows:3,placeholder:'Код kr1_ с рабочего экрана для отзыва'});
   box.append(element('details',{},element('summary',{},'Отвязать внешний QR-экран'),element('p',{},'На рабочем экране нажмите «Отвязать устройство». Код отзыва действует 60 секунд.'),revokeProof,
    element('button',{className:'outline',onclick:async()=>{try{await call('revokeKioskDevice',{proof:revokeProof.value.trim()});revokeProof.value='';msg('Рабочее устройство отозвано. Можно зарегистрировать замену.');}catch(e){msg(e.message,true);}}},'Подтвердить отзыв')));
