@@ -179,3 +179,14 @@ export const aiPhotoReviews=table('ai_photo_reviews',{
  completedAt:integer('completed_at'),
  result:json('result')
 },t=>({org:index('idx_ai_photo_review_org').on(t.orgId)}));
+
+export const aiMediaJobs=table('ai_media_jobs',{
+ messageRowId:integer('message_row_id').primaryKey(),
+ orgId:integer('org_id').notNull(),
+ chatId:integer('chat_id').notNull(),
+ kind:text('kind').notNull(),
+ status:text('status').notNull().default('pending'),
+ attempts:integer('attempts').notNull().default(0),
+ nextAttemptAt:integer('next_attempt_at').notNull().default(0),
+ updatedAt:integer('updated_at').notNull()
+},t=>({orgStatus:index('idx_ai_media_job_queue').on(t.orgId,t.status,t.nextAttemptAt)}));
