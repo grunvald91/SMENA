@@ -1,8 +1,10 @@
+import {formatDate} from '../tgcloud/lib/time.js';
 import QRCode from 'qrcode';
 import './style.css';
 import {isShiftToken} from '../tgcloud/lib/kiosk-token.js';
 import {startTelegramQrScan,startPairingQrScan} from './qr-scan.js';
 import {capturePortrait} from './portrait.js';
+import {createOwnerTools} from './owner-tools.js';
 import {createControlUI} from './control.js';
 import {reportDate,reportMoment,reportRange} from '../tgcloud/lib/report-format.js';
 const T=window.Telegram?.WebApp;
@@ -121,6 +123,7 @@ async function showCamera(intent){
  }
  panel.append(element('label',{className:'field',for:'attendance-comment'},review?.required?'Комментарий / причина (обязательно)':'Комментарий (необязательно)'),reason,
   element('p',{className:'muted'},'Комментарий будет опубликован вместе с фото в рабочей группе.'));
+ panel.append(element('p',{className:'notice'},intent.templateName?'Выбрана смена: '+intent.templateName+(intent.shiftMode==='automatic'?' · автоматически':' · по назначению'):'Учёт фактического прихода и ухода'));
  const video=element('video',{autoplay:'',playsinline:'',muted:'',className:'selfie-video'});
  video.muted=true;video.setAttribute('playsinline','');
  const take=element('button',{disabled:true},'Сфотографировать');
@@ -175,7 +178,7 @@ function table(headers,rows){
  const tb=ui('tbody',{},...rows.map(row=>ui('tr',{},...row.map(v=>ui('td',{},v??'—')))));
  return ui('div',{className:'table-scroll'},ui('table',{},th,tb));
 }
-let dashboard={period:new Date().toISOString().slice(0,7),data:null,active:'overview'};
+let dashboard={period:new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit'}).format(new Date()),data:null,active:'overview'};
 function refreshDashboard(){return call('ownerDashboard',{args:[dashboard.period]}).then(d=>{dashboard.data=d;renderDashboard();});}
 function navButton(id,title){return ui('button',{className:'tab '+(dashboard.active===id?'active':''),onclick:()=>{dashboard.active=id;renderDashboard();}},title);}
 function sectionTitle(title,description=''){return ui('div',{className:'section-intro'},ui('h2',{},title),description?ui('p',{className:'muted'},description):null);}
@@ -186,8 +189,9 @@ function dashboardOverviewPanel(d){
    statisticsCard('Отработано',d.summary.workedHours+' ч'),
    statisticsCard('Начисления',currency(d.summary.grossKopeks)),
    statisticsCard('Смен по графику',d.summary.scheduled),
-   statisticsCard('Требуют проверки',d.summary.missing+d.summary.unclosed+d.summary.deviations));
+   statisticsCard('Требуют проверки',d.summary.missing+d.summary.unclosed+d.summary.deviations+(d.pendingPhotos?.length||0)));
  const warnings=[];
+ if(d.pendingPhotos?.length)warnings.push(`${d.pendingPhotos.length} отметок требуют восстановления`);
  if(d.summary.missing)warnings.push(`${d.summary.missing} назначенных смен без отметок`);
  if(d.summary.unclosed)warnings.push(`${d.summary.unclosed} незакрытых смен`);
  if(d.summary.deviations)warnings.push(`${d.summary.deviations} уходов вне графика`);
@@ -214,7 +218,7 @@ function dashboardSchedulePanel(d){
  }catch(err){msg(err.message,true);}});
  const eSelect=makeSelect('Сотрудник',d.employees.map(x=>({id:x.id,name:x.name})));
  const tSelect=makeSelect('Тип смены',d.templates.filter(t=>t.active).map(t=>({id:t.id,name:`${t.name} · ${t.startTime}–${t.endTime} (точка ${t.locationId})`})));
- const day=textField('Дата','date',new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')+'-'+String(new Date().getDate()).padStart(2,'0'));
+ const day=textField('Дата','date',formatDate(Date.now(),d.organization.timezone));
  const assignment=ui('form',{className:'form-grid'},eSelect.field,tSelect.field,day.field,
   ui('button',{type:'submit'},'Назначить сотрудника'));
  assignment.addEventListener('submit',async e=>{e.preventDefault();try{
@@ -234,14 +238,14 @@ function dashboardSchedulePanel(d){
  ]));
  const rosterTable=table(['Дата','Сотрудник','Смена','Состояние','Действие'],d.assignments.map(a=>[
   reportDate(a.workDate),lookup(d.employees,a.employeeId)?.name||a.employeeId,a.templateName,
-  a.status==='completed'?'Завершена':a.status==='open'?'Открыта':a.status==='missing'?'Нет отметки':'По графику',
-  a.shiftId?'Зафиксировано':ui('button',{className:'outline mini-btn',onclick:async()=>{
+  a.status==='absent'?'Неявка: '+a.absenceReason:a.status==='completed'?'Завершена':a.status==='open'?'Открыта':a.status==='missing'?'Нет отметки':'По графику',
+  a.shiftId||a.status==='absent'?'Зафиксировано':ui('button',{className:'outline mini-btn',onclick:async()=>{
    if(!confirm('Снять назначение сотрудника на '+reportDate(a.workDate)+'?'))return;
    try{await call('ownerDeleteAssignment',{assignmentId:a.assignmentId});msg('Назначение удалено');await refreshDashboard();}
    catch(e){msg(e.message,true);}
   }},'Удалить')
  ]));
- return ui('div',{className:'dashboard-stack'},sectionTitle('График сотрудников','Утренняя и вечерняя смены настраиваются отдельно; назначения сохраняются по датам.'),
+ return ui('div',{className:'dashboard-stack'},sectionTitle('График сотрудников','Режим выбора смены задаётся отдельно для каждой точки.'),ownerTools.modes(d),ownerTools.bulk(d),
   ui('div',{className:'columns'},ui('section',{className:'panel'},ui('h3',{},'Добавить тип смены'),creation),ui('section',{className:'panel'},ui('h3',{},'Назначить смену'),assignment)),
   ui('section',{className:'panel'},ui('h3',{},'Типы смен'),templatesTable),
   ui('section',{className:'panel'},ui('h3',{},'Назначения за месяц'),rosterTable));
@@ -254,7 +258,7 @@ function dashboardAnalyticsPanel(d){
  const chart=ui('div',{className:'bar-chart'},...Array.from(totalByDay).sort(([a],[b])=>a.localeCompare(b)).map(([day,hours])=>
   ui('div',{className:'bar-row'},ui('span',{},reportDate(day)),ui('div',{className:'bar-track'},
     ui('div',{className:'bar-fill',style:`width:${Math.max(2,Math.min(100,hours/24*100))}%`})),ui('strong',{},hours.toFixed(1)+' ч'))));
- return ui('div',{className:'dashboard-stack'},sectionTitle('Аналитика смен','Часы по датам, отклонения и проверка незакрытых смен.'),
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Аналитика смен','Часы по датам, отклонения и проверка незакрытых смен.'),ownerTools.recovery(d),ownerTools.missing(d),ownerTools.corrections(d),
   ui('section',{className:'panel'},ui('h3',{},'Отработанные часы по дням'),totalByDay.size?chart:ui('p',{className:'muted'},'Завершённых смен пока нет.')),
   ui('section',{className:'panel'},ui('h3',{},'Отклонения'),
    d.preview.exceptions.length?table(['Сотрудник','Отклонение','Причина'],d.preview.exceptions.map(x=>[
@@ -266,17 +270,17 @@ function dashboardAnalyticsPanel(d){
    ]))));
 }
 function downloadReportCsv(d){
- const rows=[['Сотрудник','Часы','Начислено, ₽','Незакрыто'],...d.preview.entries.map(e=>[e.name,e.hours,(e.grossKopeks/100).toFixed(2),e.unclosed])];
- const csv='\uFEFF'+rows.map(row=>row.map(x=>'"'+String(x??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
+ const rows=[['Сотрудник','Часы','За часы, ₽','Надбавки, ₽','Продажи, ₽','Итого, ₽','Незакрыто'],...d.preview.entries.map(e=>[e.name,e.hours,(e.baseKopeks/100).toFixed(2),(e.bonusKopeks/100).toFixed(2),(e.salesKopeks/100).toFixed(2),(e.grossKopeks/100).toFixed(2),e.unclosed])];
+ const csv='\uFEFF'+rows.map(row=>row.map(x=>'"'+String(typeof x==='string'&&/^[=+@\-\t\r\n]/.test(x)?"'"+x:x??'').replaceAll('"','""')+'"').join(';')).join('\r\n');
  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
  const a=document.createElement('a');a.href=url;a.download=`servgo-smena-${dashboard.period}.csv`;a.click();
  setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
 function dashboardReportsPanel(d){
  const csvBtn=ui('button',{onclick:()=>downloadReportCsv(d)},'Выгрузить CSV');
- return ui('div',{className:'dashboard-stack'},sectionTitle('Месячный отчёт',reportRange(d.period)),
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Месячный отчёт',reportRange(d.period)),ownerTools.approve(d,dashboard.period),
   ui('section',{className:'panel'},ui('div',{className:'panel-head'},ui('h3',{},'Начисления'),csvBtn),
-   table(['Сотрудник','Часы','Начисление','Незакрыто'],d.preview.entries.map(e=>[e.name,e.hours,currency(e.grossKopeks),e.unclosed])),
+   table(['Сотрудник','Часы','За часы','Надбавки','Продажи','Итого','Незакрыто'],d.preview.entries.map(e=>[e.name,e.hours,currency(e.baseKopeks),currency(e.bonusKopeks),currency(e.salesKopeks),currency(e.grossKopeks),e.unclosed])),
    ui('div',{className:'report-total'},'Итого: ',ui('strong',{},currency(d.preview.totals.grossKopeks)))),
   ui('section',{className:'panel'},ui('h3',{},'Смены без отметки'),
     d.assignments.some(a=>a.status==='missing')?table(['Дата','Сотрудник','Смена'],d.assignments.filter(a=>a.status==='missing').map(a=>[reportDate(a.workDate),lookup(d.employees,a.employeeId)?.name,a.templateName])):
@@ -292,17 +296,20 @@ function dashboardSettingsPanel(d){
  const newRate=textField('Почасовая ставка, ₽','number','300');
  const editRate=ui('form',{className:'form-grid'},edit.field,newRate.field,ui('button',{type:'submit'},'Изменить ставку'));
  editRate.addEventListener('submit',async e=>{e.preventDefault();try{
+  if(!await confirmAction('Изменить ставку для будущих смен?'))return;
   await call('ownerManageEmployee',{action:'rate',tgId:Number(edit.select.value),hourlyKopeks:Math.round(Number(newRate.input.value)*100)});
   msg('Новая ставка применяется к будущим сменам');await refreshDashboard();}catch(err){msg(err.message,true);}});
  const addShiftBonus=makeSelect('Сотрудник для надбавки',d.employees.map(x=>({id:x.tgId,name:x.name})));
  const bonus=textField('Надбавка за завершённую смену, ₽','number','0');
  const editBonus=ui('form',{className:'form-grid'},addShiftBonus.field,bonus.field,ui('button',{type:'submit'},'Сохранить надбавку'));
  editBonus.addEventListener('submit',async e=>{e.preventDefault();try{
+  if(!await confirmAction('Изменить надбавку для будущих смен?'))return;
   await call('ownerManageEmployee',{action:'shiftBonus',tgId:Number(addShiftBonus.select.value),shiftBonusKopeks:Math.round(Number(bonus.input.value)*100)});
   msg('Надбавка настроена');await refreshDashboard();}catch(err){msg(err.message,true);}});
- return ui('div',{className:'dashboard-stack'},sectionTitle('Настройки','Организации, сотрудники, тарифы и рабочие группы.'),
+ return ui('div',{className:'dashboard-stack'},sectionTitle('Настройки','Сотрудники, тарифы и рабочие группы.'),ownerTools.team(d),
+  ui('button',{onclick:async()=>{try{const invite=await call('ownerOperations',{action:'invite'});const link=ui('a',{href:invite.url,target:'_blank'},'Открыть приглашение');render(ui('section',{className:'panel'},ui('h2',{},'Пригласить сотрудников'),ui('p',{},'Отправьте эту ссылку сотруднику. Он укажет имя, а вы подтвердите его в разделе заявок бота.'),ui('textarea',{readonly:'',rows:3,value:invite.url}),link,ui('button',{onclick:refreshDashboard},'Вернуться')));}catch(x){msg(x.message,true);}}},'Получить ссылку приглашения'),
   ui('div',{className:'columns'},ui('section',{className:'panel'},ui('h3',{},'Новый сотрудник'),employeeForm),ui('section',{className:'panel'},ui('h3',{},'Изменить ставку'),editRate)),
-  ui('section',{className:'panel'},ui('h3',{},'Надбавка за смену'),editBonus),
+  ownerTools.extra(d),ui('section',{className:'panel'},ui('h3',{},'Надбавка за смену'),editBonus),
   ui('section',{className:'panel'},ui('h3',{},d.organization.name),ui('p',{className:'muted'},`Часовой пояс: ${d.organization.timezone}`),
    table(['Точка','Telegram-группа','График точки (старый режим)'],d.locations.map(l=>[l.name,l.chatId||'Нет привязки',l.plannedStartTime?`${l.plannedStartTime}–${l.plannedEndTime}`:'—']))),
   ui('section',{className:'panel'},ui('h3',{},'Безопасность'),
@@ -317,12 +324,15 @@ function renderDashboard(){
   ui('h1',{},'Смена'),ui('p',{className:'muted'},d.organization.name)),
   ui('div',{className:'header-actions'},scanButton(),controlUI.button(),period,ui('button',{className:'outline',onclick:renderHome},'QR-устройство')));
  const nav=ui('nav',{className:'dashboard-nav'},...[
-  ['overview','Обзор'],['schedule','График'],['analytics','Аналитика'],['reports','Отчёты'],['settings','Настройки']
+  ['overview','Обзор'],['schedule','График'],['analytics','Табель'],['sales','Продажи'],['reports','Отчёты'],['settings','Настройки']
  ].map(([id,title])=>navButton(id,title)));
  const current=dashboard.active==='overview'?dashboardOverviewPanel(d):dashboard.active==='schedule'?dashboardSchedulePanel(d):
-  dashboard.active==='analytics'?dashboardAnalyticsPanel(d):dashboard.active==='reports'?dashboardReportsPanel(d):dashboardSettingsPanel(d);
+  dashboard.active==='analytics'?dashboardAnalyticsPanel(d):dashboard.active==='sales'?ui('section',{className:'panel'},'Загрузка продаж…'):dashboard.active==='reports'?dashboardReportsPanel(d):dashboardSettingsPanel(d);
  render(ui('div',{className:'dashboard'},header,nav,current));
+ if(dashboard.active==='sales')ownerTools.sales(d).then(panel=>{if(current.isConnected)current.replaceWith(panel);}).catch(x=>msg(x.message,true));
 }
+const confirmAction=text=>new Promise(resolve=>{if(typeof T?.showConfirm==='function')T.showConfirm(text,resolve);else resolve(window.confirm(text));});
+const ownerTools=createOwnerTools({e:element,call,msg,refresh:refreshDashboard,confirmAction});
 const controlUI=createControlUI({element,render,call,state,T,home:renderHome,msg});
 function renderHome(){
  const owner=state.context?.owner;
@@ -432,7 +442,8 @@ function renderReport(r){
   if(!T?.Serverless?.call||!T?.initData){render(ui('section',{className:'public-page'},ui('span',{className:'eyebrow'},'ServGo · управление сотрудниками'),ui('h1',{},'ServGo Смена'),ui('p',{},'Графики, QR-отметки с селфи, табель и месячные отчёты в одном кабинете.'),ui('h2',{},'Доступ владельца'),ui('p',{},'Для доступа к реальным данным откройте Mini App вашего бота ServGo Смена в Telegram. Обычная ссылка не предоставляет доступ к зарплатам и персональным данным.'),ui('a',{href:'https://t.me/servgo_smena_bot',className:'primary'},'Открыть бота в Telegram'),ui('p',{className:'muted'},'В чате бота нажмите «Открыть Смену».')));return;}T.ready();T.expand();
   state.context=await call('getContext',{});
   try{state.device=JSON.parse(localStorage.getItem('servgo-kiosk-device')||'null');}catch{state.device=null;}
+  if(state.context.owner?.timezone)dashboard.period=new Intl.DateTimeFormat('sv-SE',{timeZone:state.context.owner.timezone,year:'numeric',month:'2-digit'}).format(new Date());
   const token=state.context.scanToken || new URLSearchParams(location.search).get('scan');
-  if(token)await showScan(token);else if(state.context.controlRequested)await controlUI.show();else renderHome();
+  if(token)await showScan(token);else if(state.context.controlRequested)await controlUI.show();else if(state.context.owner)await refreshDashboard();else renderHome();
  }catch(e){render(element('section',{className:'panel'},element('h1',{},'ServGo Смена'),element('p',{className:'error'},e.message)));}
 })();

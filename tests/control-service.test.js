@@ -7,7 +7,7 @@ const {rows,sent,reset,failWith,BotApiError}=await import('./helpers/control-sdk
 const {createControl,controlContext,beginControl,completeControl}=await import('../tgcloud/lib/control.js');
 const sec=()=>Math.floor(Date.now()/1000),requestId='r'.repeat(32),token='q'.repeat(32);
 function fixture(){
- reset();rows.organizations=[{id:1,ownerTgId:101,timezone:'Europe/Moscow'},{id:2,ownerTgId:201,timezone:'Europe/Moscow'}];
+ reset();rows.organizations=[{id:1,ownerTgId:101,name:'Первая',timezone:'Europe/Moscow'},{id:2,ownerTgId:201,name:'Вторая',timezone:'Europe/Moscow'}];
  rows.locations=[{id:10,orgId:1,chatId:-10,name:'Кухня'},{id:20,orgId:2,chatId:-20,name:'Другая точка'}];
  rows.employees=[{id:11,orgId:1,tgId:111,active:1,name:'Первый'},{id:12,orgId:1,tgId:112,active:1,name:'Второй'},{id:21,orgId:2,tgId:211,active:1,name:'Чужой'}];
  rows.shifts=[{id:1,orgId:1,locationId:10,employeeId:11,endedAt:null}];rows.devices=[{id:1,orgId:1,locationId:10,revokedAt:null}];rows.qrPasses=[{token,orgId:1,locationId:10,deviceId:1,expiresAt:sec()+30}];

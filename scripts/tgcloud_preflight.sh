@@ -21,6 +21,7 @@ npm run check
 echo "Локальная симуляция безопасной миграции SQLite и восстановления..."
 if command -v python3 >/dev/null; then
   python3 scripts/check_additive_org_migration.py
+  node scripts/check_shift_migration.mjs
 else
   echo "Не найден Python 3 для проверки миграции"; exit 4
 fi

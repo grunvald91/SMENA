@@ -21,7 +21,7 @@ export const shiftTemplates=table('shift_templates',{
 export const shiftAssignments=table('shift_assignments',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
  employeeId:integer('employee_id').notNull(),templateId:integer('template_id').notNull(),workDate:text('work_date').notNull(),
- createdBy:integer('created_by').notNull(),createdAt:integer('created_at').notNull()
+ createdBy:integer('created_by').notNull(),createdAt:integer('created_at').notNull(),planSnapshot:json('plan_snapshot')
 },t=>({day:index('idx_assignment_day').on(t.orgId,t.workDate),
  employee:uniqueIndex('uq_assignment_employee_day_template').on(t.employeeId,t.workDate,t.templateId)}));
 export const devices=table('devices',{
@@ -43,17 +43,20 @@ export const shifts=table('shifts',{
  hourlyKopeksSnapshot:integer('hourly_kopeks_snapshot').notNull(),shiftBonusKopeksSnapshot:integer('shift_bonus_kopeks_snapshot').notNull().default(0),
  sourceIn:text('source_in').notNull(),sourceOut:text('source_out'),createdAt:integer('created_at').notNull(),
  plannedStartAt:integer('planned_start_at'),plannedEndAt:integer('planned_end_at'),closeGraceMinutes:integer('close_grace_minutes'),closeComment:text('close_comment'),
- templateId:integer('template_id'),assignmentId:integer('assignment_id')
+ templateId:integer('template_id'),assignmentId:integer('assignment_id'),
+ arrivalIntentId:text('arrival_intent_id').unique(),departureIntentId:text('departure_intent_id').unique(),
+ occurrenceKey:text('occurrence_key').unique()
 },t=>({employee:index('idx_shifts_employee_start').on(t.employeeId,t.startedAt),
  open:uniqueIndex('uq_employee_open_shift').on(t.employeeId).where(sql`ended_at IS NULL`)}));
 export const shiftEvents=table('shift_events',{
  id:integer('id').primaryKey({autoIncrement:true}),shiftId:integer('shift_id').notNull(),actorTgId:integer('actor_tg_id').notNull(),
- action:text('action').notNull(),at:integer('at').notNull(),qrToken:text('qr_token'),photoFileId:text('photo_file_id'),note:text('note')
+ action:text('action').notNull(),at:integer('at').notNull(),qrToken:text('qr_token'),photoFileId:text('photo_file_id'),note:text('note'),
+ photoIntentId:text('photo_intent_id').unique()
 },t=>({shift:index('idx_events_shift').on(t.shiftId)}));
 export const bonuses=table('bonuses',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),employeeId:integer('employee_id').notNull(),
  date:text('date').notNull(),amountKopeks:integer('amount_kopeks').notNull(),reason:text('reason').notNull(),
- actorTgId:integer('actor_tg_id').notNull()
+ actorTgId:integer('actor_tg_id').notNull(),operationId:text('operation_id').unique()
 },t=>({period:index('idx_bonuses_period').on(t.orgId,t.date)}));
 export const auditLog=table('audit_log',{
  id:integer('id').primaryKey({autoIncrement:true}),orgId:integer('org_id').notNull(),actorTgId:integer('actor_tg_id').notNull(),
@@ -69,7 +72,7 @@ export const photoIntents=table('photo_intents',{
  action:text('action').notNull(),createdAt:integer('created_at').notNull(),
  expiresAt:integer('expires_at').notNull(),status:text('status').notNull().default('pending'),
  photoFileId:text('photo_file_id'),photoMessageId:integer('photo_message_id'),shiftId:integer('shift_id'),
- closeComment:text('close_comment')
+ lastAttemptAt:integer('last_attempt_at'),qrSnapshot:json('qr_snapshot'),closeComment:text('close_comment'),planSnapshot:json('plan_snapshot'),targetShiftId:integer('target_shift_id')
 },t=>({employee:index('idx_photo_intent_actor').on(t.actorTgId,t.createdAt)}));
 
 // Control tasks snapshot recipients. Images remain in Telegram, never in SQLite.
@@ -77,13 +80,14 @@ export const controlRequests=table('control_requests',{
  id:text('id').primaryKey(),orgId:integer('org_id').notNull(),locationId:integer('location_id').notNull(),
  instruction:text('instruction').notNull(),deadlineAt:integer('deadline_at').notNull(),
  targets:json('targets').notNull(),createdBy:integer('created_by').notNull(),createdAt:integer('created_at').notNull(),
- notificationState:text('notification_state').notNull().default('pending'),messageId:integer('message_id')
+ notificationState:text('notification_state').notNull().default('pending'),messageId:integer('message_id'),
+ notificationAttemptAt:integer('notification_attempt_at'),cancelledAt:integer('cancelled_at')
 },t=>({org:index('idx_control_requests_org').on(t.orgId,t.createdAt)}));
 export const controlSubmissions=table('control_submissions',{
  id:text('id').primaryKey(),requestId:text('request_id').notNull(),orgId:integer('org_id').notNull(),
  employeeId:integer('employee_id').notNull(),deviceId:integer('device_id').notNull(),createdAt:integer('created_at').notNull(),expiresAt:integer('expires_at').notNull(),
  status:text('status').notNull().default('pending'),comment:text('comment'),completedAt:integer('completed_at'),
- photos:json('photos')
+ photos:json('photos'),revision:integer('revision').notNull().default(0),lastAttemptAt:integer('last_attempt_at')
 },t=>({recipient:uniqueIndex('uq_control_recipient').on(t.requestId,t.employeeId)}));
 
  
@@ -133,3 +137,41 @@ export const employeeJoinRequests=table('employee_join_requests',{
  uniq:uniqueIndex('uq_join_org_user').on(t.orgId,t.userTgId),
  pending:index('idx_join_org_status').on(t.orgId,t.status)
 }));
+
+// Per-location choice. Without a saved choice: templates use legacy assigned mode; no templates use actual attendance.
+export const locationPolicies=table('location_policies',{
+ locationId:integer('location_id').primaryKey(),orgId:integer('org_id').notNull(),
+ mode:text('mode').notNull(),updatedAt:integer('updated_at').notNull()
+});
+// Every correction is a confirmed owner decision; raw closed shifts remain intact.
+export const shiftCorrections=table('shift_corrections',{
+ id:text('id').primaryKey(),orgId:integer('org_id').notNull(),shiftId:integer('shift_id').notNull(),
+ version:integer('version').notNull(),startedAt:integer('started_at').notNull(),endedAt:integer('ended_at').notNull(),
+ before:json('before').notNull(),reason:text('reason').notNull(),actorTgId:integer('actor_tg_id').notNull(),createdAt:integer('created_at').notNull()
+},t=>({version:uniqueIndex('uq_shift_correction_version').on(t.shiftId,t.version)}));
+export const employeeSalesRules=table('employee_sales_rules',{
+ employeeId:integer('employee_id').primaryKey(),orgId:integer('org_id').notNull(),
+ rateBasisPoints:integer('rate_basis_points').notNull(),updatedAt:integer('updated_at').notNull()
+});
+// Owner-confirmed personal sales/refunds; one operation cannot be counted twice.
+export const salesEntries=table('sales_entries',{
+ id:text('id').primaryKey(),orgId:integer('org_id').notNull(),employeeId:integer('employee_id').notNull(),
+ date:text('date').notNull(),amountKopeks:integer('amount_kopeks').notNull(),rateBasisPointsSnapshot:integer('rate_basis_points_snapshot').notNull(),
+ commissionKopeks:integer('commission_kopeks').notNull(),refundOf:text('refund_of').unique(),
+ reason:text('reason').notNull(),actorTgId:integer('actor_tg_id').notNull(),createdAt:integer('created_at').notNull()
+},t=>({period:index('idx_sales_org_date').on(t.orgId,t.date)}));
+export const controlReviews=table('control_reviews',{
+ submissionId:text('submission_id').primaryKey(),orgId:integer('org_id').notNull(),decision:text('decision').notNull(),
+ note:text('note'),revision:integer('revision').notNull(),history:json('history').notNull(),actorTgId:integer('actor_tg_id').notNull(),updatedAt:integer('updated_at').notNull()
+});
+export const payrollApprovals=table('payroll_approvals',{
+ id:text('id').primaryKey(),orgId:integer('org_id').notNull(),periodStart:text('period_start').notNull(),periodEnd:text('period_end').notNull(),
+ snapshot:json('snapshot').notNull(),actorTgId:integer('actor_tg_id').notNull(),createdAt:integer('created_at').notNull()
+},t=>({period:index('idx_payroll_approval_period').on(t.orgId,t.periodStart,t.periodEnd)}));
+
+// Confirmed no-show or manual-attendance decisions; unique assignment reserves one recoverable decision.
+export const assignmentResolutions=table('assignment_resolutions',{
+ assignmentId:integer('assignment_id').primaryKey(),orgId:integer('org_id').notNull(),
+ decision:text('decision').notNull(),requestId:text('request_id').notNull(),payload:json('payload').notNull(),
+ reason:text('reason').notNull(),actorTgId:integer('actor_tg_id').notNull(),createdAt:integer('created_at').notNull()
+});

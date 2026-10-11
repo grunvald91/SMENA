@@ -5,9 +5,9 @@ import {computePreview} from '../tgcloud/lib/payroll.js';
 import { nonce,verifyDeviceSignature,pairingMessage,validateProofTime,base64url } from '../tgcloud/lib/security.js';
 import {DomainError} from '../tgcloud/lib/errors.js';
 const p=(start,end)=>({start,end,startMs:Date.parse(start+'T00:00:00Z'),endMs:Date.parse(end+'T00:00:00Z'),tz:'UTC'});
-test('default report includes prior days only, by location timezone',()=>{
+test('default report includes today, by location timezone',()=>{
  const r=reportPeriod([],Date.parse('2026-10-10T07:00:00Z'),'Europe/Moscow');
- assert.equal(r.start,'2026-10-01');assert.equal(r.end,'2026-10-10');
+ assert.equal(r.start,'2026-10-01');assert.equal(r.end,'2026-10-11');
  assert.equal(new Date(r.startMs).toISOString(),'2026-09-30T21:00:00.000Z');
 });
 test('reports support full months, exact end-inclusive dates and invalid values',()=>{
