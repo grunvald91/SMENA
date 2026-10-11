@@ -25,6 +25,8 @@ test('manager cannot manage roles or view payroll',()=>{
   assert.equal(hasPermission('manager','roles.manage'),false);
   assert.equal(hasPermission('manager','schedule.manage'),true);
   assert.equal(hasPermission('employee','employees.manage'),false);
+  assert.equal(hasPermission('employee','organization.select'),true);
+  assert.equal(hasPermission('employee','payroll.view'),false);
   assert.equal(hasPermission('root','organization.view'),false);
 });
 test('invalid organization IDs and unauthorized scopes fail closed',()=>{
