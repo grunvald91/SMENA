@@ -6,6 +6,7 @@ import {requireInput} from './errors.js';
 import {buildPrivateBatch} from './ai-batch.js';
 import {evidenceUrl} from './ai-rules.js';
 import {callServGoOwnerAnswer} from './ai-gateway.js';
+import {loadOnePreviousContextPage} from './ai-context-fallback.js';
 
 export const OWNER_CONTEXT_LIMIT=60;
 const RECENT_SAMPLE_LIMIT=200;
@@ -65,7 +66,8 @@ export async function answerOwnerFromCurrentEvents(ownerId,question){
  const knownActors=await db.select().from(aiParticipants).where(eq(aiParticipants.orgId,org.id)).limit(500).all();
  const aliases=Object.fromEntries(knownActors.map(x=>[x.actorKey,x.alias]));
  const people=team.map(x=>({name:x.name,alias:aliases['u:'+x.tgId]||'[СОТРУДНИК]'}));
- const {payload,sourceMap}=buildPrivateBatch(selected,{confirmed:known,employeeNames:people,actorAliases:aliases});
+ const batchOptions={confirmed:known,employeeNames:people,actorAliases:aliases};
+ let {payload,sourceMap}=buildPrivateBatch(selected,batchOptions);
  const rawJobs=await db.select().from(aiMediaJobs).where(eq(aiMediaJobs.orgId,org.id)).limit(100).all();
  const unreadMediaCount=rawJobs.filter(x=>chats.has(x.chatId)&&x.status!=='done').length;
  const sampledPending=usable.filter(x=>x.id>cursor).length;
@@ -77,13 +79,32 @@ export async function answerOwnerFromCurrentEvents(ownerId,question){
  // Reuse the exact business-name redactor used for stored chat evidence.
  const sanitize=value=>buildPrivateBatch([{chatId:0,messageId:1,sentAt:Math.floor(Date.now()/1000),
   content:String(value||'')}],{employeeNames:people}).payload.messages[0].text;
- const response=await callServGoOwnerAnswer(cfg.capability,{
-  ...payload,mode:'owner_question',question:sanitize(q),coverage,
-  recentFindings:recentFindings.slice(0,12).map(x=>({
-   status:x.status,
-   statement:sanitize(x.correctedStatement||x.statement||'').slice(0,500)
-  }))
+ const safeQuestion=sanitize(q);
+ const findingsContext=recentFindings.slice(0,12).map(x=>({
+  status:x.status,statement:sanitize(x.correctedStatement||x.statement||'').slice(0,500)
+ }));
+ const ask=body=>callServGoOwnerAnswer(cfg.capability,{
+  ...body,mode:'owner_question',question:safeQuestion,coverage,
+  recentFindings:findingsContext
  });
+ let response=await ask(payload);
+ if(response.needs_previous_context===true){
+  // At most 30 PREVIOUS events and exactly one extra provider request.
+  const older=await loadOnePreviousContextPage(org.id,selected,enabled.map(x=>x.chatId));
+  if(older.length){
+   ({payload,sourceMap}=buildPrivateBatch(selected,{...batchOptions,previous:older}));
+   response=await ask(payload);
+  }else{
+   response={answer:'',sources:[],limitations:['Более ранних доступных сообщений для уточнения контекста нет.'],
+    needs_previous_context:true};
+  }
+ }
+ if(response.needs_previous_context===true){
+  // Do not claim definite outcomes after the single allowed context repair.
+  response={answer:'Не удалось уверенно восстановить обстоятельства из доступных сообщений.',
+   sources:[],limitations:[...(response.limitations||[]),
+    'Дополнительная история проверена не более одного раза. Неопределённость сохранена.']};
+ }
  // A query must not falsely advance deep-analysis progress.
  return formatOwnerAnswer(response,sourceMap,coverage);
 }
