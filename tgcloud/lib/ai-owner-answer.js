@@ -7,6 +7,7 @@ import {buildPrivateBatch} from './ai-batch.js';
 import {evidenceUrl} from './ai-rules.js';
 import {callServGoOwnerAnswer} from './ai-gateway.js';
 import {loadOnePreviousContextPage} from './ai-context-fallback.js';
+import {analyzeWithSingleLookback} from './ai-context-repair.js';
 
 export const OWNER_CONTEXT_LIMIT=60;
 const RECENT_SAMPLE_LIMIT=200;
@@ -67,7 +68,7 @@ export async function answerOwnerFromCurrentEvents(ownerId,question){
  const aliases=Object.fromEntries(knownActors.map(x=>[x.actorKey,x.alias]));
  const people=team.map(x=>({name:x.name,alias:aliases['u:'+x.tgId]||'[СОТРУДНИК]'}));
  const batchOptions={confirmed:known,employeeNames:people,actorAliases:aliases};
- let {payload,sourceMap}=buildPrivateBatch(selected,batchOptions);
+
  const rawJobs=await db.select().from(aiMediaJobs).where(eq(aiMediaJobs.orgId,org.id)).limit(100).all();
  const unreadMediaCount=rawJobs.filter(x=>chats.has(x.chatId)&&x.status!=='done').length;
  const sampledPending=usable.filter(x=>x.id>cursor).length;
@@ -83,21 +84,19 @@ export async function answerOwnerFromCurrentEvents(ownerId,question){
  const findingsContext=recentFindings.slice(0,12).map(x=>({
   status:x.status,statement:sanitize(x.correctedStatement||x.statement||'').slice(0,500)
  }));
- const ask=body=>callServGoOwnerAnswer(cfg.capability,{
-  ...body,mode:'owner_question',question:safeQuestion,coverage,
-  recentFindings:findingsContext
+ const result=await analyzeWithSingleLookback({
+  messages:selected,options:batchOptions,
+  fetchPrevious:primary=>loadOnePreviousContextPage(org.id,primary,enabled.map(x=>x.chatId)),
+  askModel:body=>callServGoOwnerAnswer(cfg.capability,{
+   ...body,mode:'owner_question',question:safeQuestion,coverage,
+   recentFindings:findingsContext
+  })
  });
- let response=await ask(payload);
- if(response.needs_previous_context===true){
-  // At most 30 PREVIOUS events and exactly one extra provider request.
-  const older=await loadOnePreviousContextPage(org.id,selected,enabled.map(x=>x.chatId));
-  if(older.length){
-   ({payload,sourceMap}=buildPrivateBatch(selected,{...batchOptions,previous:older}));
-   response=await ask(payload);
-  }else{
-   response={answer:'',sources:[],limitations:['Более ранних доступных сообщений для уточнения контекста нет.'],
-    needs_previous_context:true};
-  }
+ let response=result.response;
+ const sourceMap=result.sourceMap;
+ if(result.inconclusive&&result.previousMessages===0){
+  response={answer:'',sources:[],needs_previous_context:true,
+   limitations:['Более ранних доступных сообщений для уточнения контекста нет.']};
  }
  if(response.needs_previous_context===true){
   // Do not claim definite outcomes after the single allowed context repair.
