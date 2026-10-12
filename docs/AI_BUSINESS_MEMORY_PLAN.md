@@ -91,3 +91,17 @@ Changes to existing messages and reactions are queued for repeated analysis, inc
 **Critical scheduler gap:** Telegram Serverless itself only runs handlers when an update arrives and Mini App endpoints when invoked by a user. The 03:00 clock rule is implemented in source code, but it currently executes **on the next eligible incoming event at or after the nightly deadline**. This DOES NOT satisfy a guaranteed wall-clock 03:00 nightly run or finish all backlog without incoming events. For production-level daily guarantees, build an authenticated VPS scheduled worker backed by a durable event mirror/shared datastore (see gateway README). Do NOT try to impersonate a Telegram Mini App user to call the protected endpoints; do not rely on Telegram sending bot-generated messages to the bot itself.
 
 **Remaining verification:** test Node modules, gateway answer contract with real model, serverless callback timeouts, privacy and consent, migration and recurrence under silent chat. The branch remains DRAFT, not deployed.
+
+
+## Bounded one-time context repair — agreed, 2026-10-12
+
+**Runtime policy:** no VPS scheduler in this phase; run only Telegram Serverless event handlers. The model gateway still handles external provider credentials but does not schedule work. The 03:00 Moscow "nightly" rule is **event-triggered**, not a precise timer: an inactive chat may skip nights until a new Telegram event arrives.
+
+For BOTH deep learning batches and foreground owner questions:
+1. Start with the current set of up to 60 events and confirmed/corrected/rejected company memory.
+2. If the model explicitly replies `needs_previous_context=true`, fetch **one** additional page of at most 30 immediately older saved messages, only from that owner's currently enabled chats. Messages are included as separate `previousContext` references `c1..c30`, alongside primary `m1..m60`, so existing reply chains may link across the boundary.
+3. Call the model **one more time**, only if at least one older message was actually found. There can be no third model call or further page lookup, even if the second reply again asks for context.
+4. If still unclear, suppress model hypotheses and persist a non-factual `status=unresolved`, `origin=context_gap` observation; do not fabricate an explanation. For owner answers, respond explicitly that the circumstances cannot be established with available evidence, with coverage limitations.
+5. Earlier events supply *context*, not sufficient evidence alone for a fresh business finding. Grounded findings must cite a valid primary `m*` source. The deep analysis cursor advances over primary messages only; historical context does not artificially count as newly analyzed events.
+
+All logic shares `tgcloud/lib/ai-context-repair.js`; no recursive tool calls or autonomous history search are allowed. The prior-page lookup and provider call are separately bounded. External provider request sizes cap primary events at 60 and historical events at 30. Model/API quota must account for the second provider call when context is insufficient. Verify separately that the external LLM honors the explicit structured `needs_previous_context` contract.
