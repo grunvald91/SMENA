@@ -17,7 +17,7 @@ export async function callServGoAiGateway(capability,payload){
  }
  const answer=await response.json();
  if(!answer||!Array.isArray(answer.findings))throw new Error('AI_INVALID_RESPONSE');
- return {findings:answer.findings.slice(0,8),usage:answer.usage||null};
+ return {findings:answer.findings.slice(0,8),needs_previous_context:answer.needs_previous_context===true,usage:answer.usage||null};
 }
 
 export async function callServGoVisionGateway(capability,payload){
@@ -69,5 +69,6 @@ export async function callServGoOwnerAnswer(capability,payload){
  const body=await response.json();
  if(typeof body?.answer!=='string'||!Array.isArray(body.sources))throw new Error('AI_INVALID_RESPONSE');
  return {answer:body.answer.slice(0,3500),sources:body.sources.slice(0,12),
+  needs_previous_context:body.needs_previous_context===true,
   limitations:Array.isArray(body.limitations)?body.limitations.slice(0,5):[]};
 }
