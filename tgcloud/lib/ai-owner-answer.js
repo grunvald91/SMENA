@@ -19,7 +19,9 @@ export function formatOwnerAnswer(reply,sourceMap,coverage){
   problems.push('Глубокая память ещё не охватила все новые события; в ответ включены последние исходные сообщения.');
  }
  if(coverage.unreadMediaCount>0){
-  problems.push('Есть '+coverage.unreadMediaCount+(coverage.unreadMediaCount>=100?'+':'')+' файлов, содержимое которых ещё не проверено.');
+  const n=coverage.unreadMediaCount;
+  const label=n%100>=11&&n%100<=14?'файлов':n%10===1?'файл':n%10>=2&&n%10<=4?'файла':'файлов';
+  problems.push('Есть '+n+(n>=100?'+':'')+' '+label+', содержимое которых ещё не проверено.');
  }
  if(coverage.sampleLimited){
   problems.push('История длиннее доступной оперативной выборки; выводы не следует считать исчерпывающими.');
