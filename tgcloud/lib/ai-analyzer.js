@@ -8,6 +8,7 @@ import {buildPrivateBatch,groundBatchFindings} from './ai-batch.js';
 import {callServGoAiGateway} from './ai-gateway.js';
 import {pendingChangedMessages,finishChangedMessages} from './ai-dirty.js';
 import {loadOnePreviousContextPage} from './ai-context-fallback.js';
+import {analyzeWithSingleLookback} from './ai-context-repair.js';
 const clock=()=>Math.floor(Date.now()/1000);
 
 export async function configureAiGateway(ownerTgId,capability,enabled=true){
@@ -93,20 +94,12 @@ export async function analyzeNextBatch(ownerTgId){
    reactions:[...reactions,...anonymous].filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),
    employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),
    actorAliases};
-  let {payload,sourceMap}=buildPrivateBatch(messages,contextOptions);
-  let response=await callServGoAiGateway(config.capability,payload);
-  let extraMessages=0;
-  if(response.needs_previous_context===true){
-   // Exactly ONE lookback page; NEVER recursively page through business history.
-   const older=await loadOnePreviousContextPage(org.id,messages,enabled.map(x=>x.chatId));
-   extraMessages=older.length;
-   if(older.length){
-    ({payload,sourceMap}=buildPrivateBatch(messages,{...contextOptions,previous:older}));
-    response=await callServGoAiGateway(config.capability,payload);
-   }
-  }
-  // If even the second pass needs more history, create no definite conclusion.
-  const inconclusive=response.needs_previous_context===true;
+  const context=await analyzeWithSingleLookback({
+   messages,options:contextOptions,
+   fetchPrevious:primary=>loadOnePreviousContextPage(org.id,primary,enabled.map(x=>x.chatId)),
+   askModel:payload=>callServGoAiGateway(config.capability,payload)
+  });
+  const {response,sourceMap,inconclusive,previousMessages:extraMessages}=context;
   const candidates=inconclusive?[]:groundBatchFindings(response.findings,sourceMap);
   requireInput(inconclusive||response.findings.length===0||candidates.length>0,
    'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
