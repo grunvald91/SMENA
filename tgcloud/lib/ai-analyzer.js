@@ -7,6 +7,7 @@ import {nonce} from './security.js';
 import {buildPrivateBatch,groundBatchFindings} from './ai-batch.js';
 import {callServGoAiGateway} from './ai-gateway.js';
 import {pendingChangedMessages,finishChangedMessages} from './ai-dirty.js';
+import {loadOnePreviousContextPage} from './ai-context-fallback.js';
 const clock=()=>Math.floor(Date.now()/1000);
 
 export async function configureAiGateway(ownerTgId,capability,enabled=true){
@@ -88,10 +89,27 @@ export async function analyzeNextBatch(ownerTgId){
    const pseudonyms=await db.select().from(aiParticipants).where(and(eq(aiParticipants.orgId,org.id),inArray(aiParticipants.actorKey,keys))).all();
    for(const p of pseudonyms)actorAliases[p.actorKey]=p.alias;
   }
-  const {payload,sourceMap}=buildPrivateBatch(messages,{confirmed,reactions:[...reactions,...anonymous].filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),actorAliases});
-  const response=await callServGoAiGateway(config.capability,payload);
-  const candidates=groundBatchFindings(response.findings,sourceMap);
-  requireInput(response.findings.length===0||candidates.length>0,'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
+  const contextOptions={confirmed,
+   reactions:[...reactions,...anonymous].filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),
+   employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),
+   actorAliases};
+  let {payload,sourceMap}=buildPrivateBatch(messages,contextOptions);
+  let response=await callServGoAiGateway(config.capability,payload);
+  let extraMessages=0;
+  if(response.needs_previous_context===true){
+   // Exactly ONE lookback page; NEVER recursively page through business history.
+   const older=await loadOnePreviousContextPage(org.id,messages,enabled.map(x=>x.chatId));
+   extraMessages=older.length;
+   if(older.length){
+    ({payload,sourceMap}=buildPrivateBatch(messages,{...contextOptions,previous:older}));
+    response=await callServGoAiGateway(config.capability,payload);
+   }
+  }
+  // If even the second pass needs more history, create no definite conclusion.
+  const inconclusive=response.needs_previous_context===true;
+  const candidates=inconclusive?[]:groundBatchFindings(response.findings,sourceMap);
+  requireInput(inconclusive||response.findings.length===0||candidates.length>0,
+   'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
   let proposed=0;
   for(const [i,item] of candidates.entries()){
    // Stable key stops duplicate findings if a request succeeded but cursor update failed.
@@ -107,7 +125,8 @@ export async function analyzeNextBatch(ownerTgId){
    .where(and(eq(aiAnalysisProgress.orgId,org.id),eq(aiAnalysisProgress.lockToken,lock),eq(aiAnalysisProgress.cursorId,progress.cursorId))).run();
   requireInput(changed.rowsAffected===1,'AI_PROGRESS_CONFLICT','Прогресс анализа изменился');
   await finishChangedMessages(org.id,dirty);
-  return {processed:page.length,rechecked:dirty.length,proposed,through:lastId,modelUsed:true};
+  return {processed:page.length,rechecked:dirty.length,proposed,through:lastId,modelUsed:true,
+   contextInsufficient:inconclusive,previousContextMessages:extraMessages};
  }finally{
   // Lock does not prevent normal attendance/QR operations, even on API failure.
   await db.update(aiAnalysisProgress).set({busyUntil:0,lockToken:null,updatedAt:clock()})
