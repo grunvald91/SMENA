@@ -60,7 +60,7 @@ export function groundBatchFindings(untrusted,sourceMap){
   if(title.length<3||title.length>120||statement.length<15||statement.length>800)return null;
   const refs=[...new Set((Array.isArray(item.sources)?item.sources:[]).filter(x=>typeof x==='string'&&/^(?:m(?:[1-9]|[1-5][0-9]|60)|c(?:[1-9]|[12][0-9]|30))$/.test(x)))].slice(0,8);
   // Old context is explanatory only: a new hypothesis needs a cited NEW event.
-  if(!refs.some(ref=>ref.startsWith('m')))return null;
+  if(!refs.some(ref=>ref.startsWith('m')&&Object.hasOwn(sourceMap,ref)))return null;
   const evidence=refs.map(ref=>Object.hasOwn(sourceMap,ref)?sourceMap[ref]:null).filter(Boolean);
   if(!evidence.length)return null;
   return {title,statement,evidence,confidence:['low','medium','high'].includes(item.confidence)?item.confidence:'low'};
