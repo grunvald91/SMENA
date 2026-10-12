@@ -78,3 +78,14 @@ Analysis runs because Telegram has delivered an update; this is not a durable wa
 Owner reviews are now pushed proactively with confirm/reject buttons; opening /ai_review manually is optional. No owner intervention is required to select individual photos or launch routine model requests. Ongoing model costs, provider retention, consent to external transmission and actual Serverless timeouts have not yet been verified. This is source code only, NOT DEPLOYED.
 
 PDF, voice/audio, images and video analysis now uses /v1/media as well as /v1/vision. Configure AI_PROVIDER_AUDIO_MODEL and AI_PROVIDER_VIDEO_MODEL to enable the corresponding provider modalities; no model support is assumed without a live integration test. Unsupported formats are queued for future extractors. Actual content understanding has not been verified in production.
+
+## Fresh answers vs nightly learning (October 2026 architecture)
+
+Two AI paths intentionally coexist:
+
+- **Foreground:** in the owner's private bot chat, any plain-language question or `/ai <question>` reads the latest captured raw events in Telegram Serverless, confirmed/rejected learning context and unread-media status. It sends a bounded 60-item source-mapped context to `POST /v1/answer`. The model returns a grounded answer immediately after that query completes; this does not advance or depend on the background cursor. When the context is truncated or files remain unread, the answer explicitly discloses this. The provided owner question is not stored as a workplace event.
+- **Background:** event-driven deep memory processes a batch after at least 30 new events/changes. At/after 03:00 Europe/Moscow, even a smaller nonempty backlog qualifies for the nightly pass. Once the whole queue drains, `lastNightlyDate` marks the completed Moscow calendar day. An empty queue needs no billable provider call.
+
+**Operational limitation:** `/v1/answer` is coded but not deployed. The event-driven nightly rule only wakes on Telegram updates. To GUARANTEE daily analysis in a silent group, the VPS must run a 03:00 Moscow scheduled worker with durable access to a mirrored ingestion/event queue and sync its results to authoritative ServGo memory. The Serverless database is NOT remotely readable by the VPS in the current architecture, and Mini App endpoints validate Telegram user identity, so the gateway currently cannot invoke a scheduled database job directly. Do not claim unattended wall-clock daily analysis until that bridge and scheduler are built, tested and deployed. Queue and downstream provider calls must be individually retried and idempotent.
+
+A suitable operational cron expression is `0 3 * * *` with the process timezone set to `Europe/Moscow`; by itself it does not provide the authenticated data bridge. Do not place API credentials in the crontab line or commit them. Verify the real VPS timezone, Telegram event-lag, and monthly model billing caps before enabling the schedule.
