@@ -6,6 +6,7 @@ import {captureWorkMessage,configureWorkChat,memoryStatus,prepareOwnerReview,dec
 import {evidenceUrl} from '../lib/ai-rules.js';
 import {ensureCalibrationSchedule} from '../lib/ai-calibration.js';
 import {processObservedEvent} from '../lib/ai-auto.js';
+import {answerOwnerFromCurrentEvents} from '../lib/ai-owner-answer.js';
 import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
 function money(input){
@@ -31,6 +32,7 @@ EMPLOYEE_HELP,
 '/report 2026-09 — за месяц; /report 2026-10-01 2026-10-09 — даты включительно',
 '/problems — незакрытые смены до сегодняшнего дня',
 '/ai_status — статус наблюдения; /ai_review [7 или 14] — выводы на проверку',
+'/ai Вопрос — актуальный ответ по свежей переписке (или просто напишите вопрос боту в личном чате)',
 '/ai_confirm ID, /ai_reject ID, /ai_correct ID уточнение — проверить вывод',
 'В рабочей группе: /ai_on и /ai_off — включить и выключить наблюдение (владелец).','',
 'В рабочей группе: /bind Название точки — владелец привязывает группу; /id — показать свой TG ID.',
@@ -51,8 +53,15 @@ export default async function(message){
  if(!privateChat){
   try{const stored=await captureWorkMessage(message);if(stored)await processObservedEvent(chat);}catch(e){console.warn('AI message/calibration capture unavailable',e?.code||e?.name||'unknown');}
  }
- if(!tgId||message.from?.is_bot||!cmd) return;
+ if(!tgId||message.from?.is_bot) return;
  try {
+  if(privateChat&&!cmd&&typeof message.text==='string'&&message.text.trim()){
+   await reply(chat,await answerOwnerFromCurrentEvents(tgId,message.text));return;
+  }
+  if(!cmd)return;
+  if(privateChat&&['ai','ask','ai_ask'].includes(cmd.cmd)){
+   await reply(chat,await answerOwnerFromCurrentEvents(tgId,cmd.args));return;
+  }
   if(cmd.cmd==='start'||cmd.cmd==='help'){await reply(chat,HELP);return;}
   if(cmd.cmd==='id'){await reply(chat,`Telegram ID: ${tgId}`);return;}
   if(cmd.cmd==='bind'){
