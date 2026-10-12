@@ -29,7 +29,8 @@ export async function aiProcessingStatus(ownerTgId){
  const config=await db.select().from(aiGatewaySettings).where(eq(aiGatewaySettings.orgId,org.id)).get();
  const progress=await db.select().from(aiAnalysisProgress).where(eq(aiAnalysisProgress.orgId,org.id)).get();
  const last=await db.select().from(aiMessages).where(eq(aiMessages.orgId,org.id)).orderBy(desc(aiMessages.id)).limit(1).get();
- return {configured:!!config?.active,cursor:progress?.cursorId||0,latest:last?.id||0,pending:Math.max(0,(last?.id||0)-(progress?.cursorId||0))};
+ return {configured:!!config?.active,cursor:progress?.cursorId||0,latest:last?.id||0,
+  lastNightlyDate:progress?.lastNightlyDate||null,pending:Math.max(0,(last?.id||0)-(progress?.cursorId||0))};
 }
 
 // At most ONE bounded model call per invocation. Retry same batch on error.
