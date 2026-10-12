@@ -4,7 +4,7 @@ import {aiMessages,aiFindings,aiMediaJobs,aiChatSettings,aiGatewaySettings,aiAna
 import {requireOwner} from './service.js';
 import {requireInput} from './errors.js';
 import {buildPrivateBatch} from './ai-batch.js';
-import {redactForModel,evidenceUrl} from './ai-rules.js';
+import {evidenceUrl} from './ai-rules.js';
 import {callServGoOwnerAnswer} from './ai-gateway.js';
 
 export const OWNER_CONTEXT_LIMIT=60;
@@ -26,7 +26,7 @@ export function formatOwnerAnswer(reply,sourceMap,coverage){
  }
  const deduplicated=[...new Set(problems.map(x=>x.slice(0,250)))];
  let answer=String(reply.answer||'').slice(0,3000).trim();
- if(!sourceLinks.length)answer='Не удалось подтвердить утверждения по исходным сообщениям. '+answer.slice(0,800);
+ if(!sourceLinks.length)answer='По доступным сообщениям не найдено подтверждённых источников для содержательного вывода. Уточните вопрос или дождитесь новых данных.';
  if(sourceLinks.length)answer+='\n\nИсточники:\n'+sourceLinks.map(s=>'• '+s).join('\n');
  if(deduplicated.length)answer+='\n\nОграничения:\n'+deduplicated.map(x=>'• '+x).join('\n');
  return answer.slice(0,3850);
@@ -72,15 +72,14 @@ export async function answerOwnerFromCurrentEvents(ownerId,question){
   selectedCount:selected.length,unreadMediaCount,
   sampleLimited:all.length===RECENT_SAMPLE_LIMIT||usable.length>OWNER_CONTEXT_LIMIT
  };
- // Known names are replaced with the matching stable alias before leaving ServGo.
- let safeQuestion=redactForModel(q);
- for(const person of people.filter(x=>typeof x.name==='string'&&x.name.length>=3))
-  safeQuestion=safeQuestion.replaceAll(person.name,person.alias);
+ // Reuse the exact business-name redactor used for stored chat evidence.
+ const sanitize=value=>buildPrivateBatch([{chatId:0,messageId:1,sentAt:Math.floor(Date.now()/1000),
+  content:String(value||'')}],{employeeNames:people}).payload.messages[0].text;
  const response=await callServGoOwnerAnswer(cfg.capability,{
-  ...payload,mode:'owner_question',question:safeQuestion,coverage,
+  ...payload,mode:'owner_question',question:sanitize(q),coverage,
   recentFindings:recentFindings.slice(0,12).map(x=>({
    status:x.status,
-   statement:redactForModel(x.correctedStatement||x.statement||'').slice(0,500)
+   statement:sanitize(x.correctedStatement||x.statement||'').slice(0,500)
   }))
  });
  // A query must not falsely advance deep-analysis progress.
