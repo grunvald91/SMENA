@@ -2,10 +2,14 @@
 // Source IDs, chat IDs, telegram IDs and file IDs stay on the ServGo side.
 import {redactForModel} from './ai-rules.js';
 
-export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNames=[],actorAliases={}}={}){
+export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNames=[],actorAliases={},previous=[]}={}){
  const items=Array.isArray(messages)?messages.slice(0,60):[];
+ const previousItems=Array.isArray(previous)?previous.slice(0,30):[];
  const sourceMap=Object.create(null);
- const byMessage=new Map(items.map((m,i)=>[String(m.chatId)+':'+m.messageId,'m'+(i+1)]));
+ const byMessage=new Map([
+  ...previousItems.map((m,i)=>[String(m.chatId)+':'+m.messageId,'c'+(i+1)]),
+  ...items.map((m,i)=>[String(m.chatId)+':'+m.messageId,'m'+(i+1)])
+ ]);
  const groups=new Map();
  const names=(Array.isArray(employeeNames)?employeeNames:[]).map(x=>typeof x==='string'?{name:x,alias:'[СОТРУДНИК]'}:x)
   .filter(x=>x&&typeof x.name==='string'&&x.name.trim().length>=3)
@@ -29,20 +33,23 @@ export function buildPrivateBatch(messages,{confirmed=[],reactions=[],employeeNa
   }
   reactionIndex.set(key,list);
  }
- const output=items.map((m,i)=>{
-  const ref='m'+(i+1),key=String(m.chatId)+':'+m.messageId;
+ const transform=(m,ref)=>{
+  const key=String(m.chatId)+':'+m.messageId;
   sourceMap[ref]={chatId:m.chatId,messageId:m.messageId,sentAt:m.sentAt};
   if(!groups.has(String(m.chatId)))groups.set(String(m.chatId),'точка-'+(groups.size+1));
   return {ref,group:groups.get(String(m.chatId)),actor:actorAliases[m.authorTgId?'u:'+m.authorTgId:m.senderChatId?'c:'+m.senderChatId:'']||'неизвестен',day:new Date(m.sentAt*1000).toISOString().slice(0,10),
    kind:['text','photo','video','voice','document','sticker'].includes(m.kind)?m.kind:'other',
    replyTo:byMessage.get(String(m.chatId)+':'+m.replyToMessageId)||null,
    text:scrub(m.content||''),reactions:reactionIndex.get(key)||[]};
- });
+ };
+ const previousContext=previousItems.map((m,i)=>transform(m,'c'+(i+1)));
+ const output=items.map((m,i)=>transform(m,'m'+(i+1)));
  const memory=(Array.isArray(confirmed)?confirmed:[]).filter(m=>['confirmed','corrected'].includes(m.status))
   .slice(-25).map(x=>scrub(x.correctedStatement||x.statement||''));
  const rejected=(Array.isArray(confirmed)?confirmed:[]).filter(m=>m.status==='rejected')
   .slice(-15).map(x=>scrub(x.statement||''));
- return {payload:{version:1,mode:'work_chat',messages:output,confirmedMemory:memory,rejectedMemory:rejected},sourceMap};
+ return {payload:{version:1,mode:'work_chat',messages:output,confirmedMemory:memory,rejectedMemory:rejected,
+  ...(previousItems.length?{previousContext}: {})},sourceMap};
 }
 
 export function groundBatchFindings(untrusted,sourceMap){
@@ -51,7 +58,7 @@ export function groundBatchFindings(untrusted,sourceMap){
   if(!item||typeof item.title!=='string'||typeof item.statement!=='string')return null;
   const title=item.title.trim(),statement=item.statement.trim();
   if(title.length<3||title.length>120||statement.length<15||statement.length>800)return null;
-  const refs=[...new Set((Array.isArray(item.sources)?item.sources:[]).filter(x=>typeof x==='string'&&/^m(?:[1-9]|[1-5][0-9]|60)$/.test(x)))].slice(0,8);
+  const refs=[...new Set((Array.isArray(item.sources)?item.sources:[]).filter(x=>typeof x==='string'&&/^(?:m(?:[1-9]|[1-5][0-9]|60)|c(?:[1-9]|[12][0-9]|30))$/.test(x)))].slice(0,8);
   const evidence=refs.map(ref=>Object.hasOwn(sourceMap,ref)?sourceMap[ref]:null).filter(Boolean);
   if(!evidence.length)return null;
   return {title,statement,evidence,confidence:['low','medium','high'].includes(item.confidence)?item.confidence:'low'};
