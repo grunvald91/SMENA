@@ -85,3 +85,120 @@ export const controlSubmissions=table('control_submissions',{
  status:text('status').notNull().default('pending'),comment:text('comment'),completedAt:integer('completed_at'),
  photos:json('photos')
 },t=>({recipient:uniqueIndex('uq_control_recipient').on(t.requestId,t.employeeId)}));
+
+
+// Business memory is opt-in per already bound work chat. The data stays tenant-scoped.
+export const aiChatSettings=table('ai_chat_settings',{
+ chatId:integer('chat_id').primaryKey(),orgId:integer('org_id').notNull(),
+ enabledAt:integer('enabled_at').notNull(),enabledBy:integer('enabled_by').notNull(),
+ active:integer('active').notNull().default(1)
+},t=>({org:index('idx_ai_settings_org').on(t.orgId)}));
+
+export const aiMessages=table('ai_messages',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),threadId:integer('thread_id'),
+ authorTgId:integer('author_tg_id'),senderChatId:integer('sender_chat_id'),
+ replyToMessageId:integer('reply_to_message_id'),sentAt:integer('sent_at').notNull(),
+ editedAt:integer('edited_at'),kind:text('kind').notNull(),
+ content:text('content').notNull().default(''),
+ fileId:text('file_id'),mediaGroupId:text('media_group_id'),
+ mimeType:text('mime_type'),fileName:text('file_name'),fileSize:integer('file_size'),
+ capturedAt:integer('captured_at').notNull()
+},t=>({unique:uniqueIndex('uq_ai_message_chat_id').on(t.chatId,t.messageId),
+ orgTime:index('idx_ai_msg_org_sent').on(t.orgId,t.sentAt)}));
+
+export const aiReactions=table('ai_reactions',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),actorKey:text('actor_key').notNull(),
+ reactions:json('reactions').notNull(),updatedAt:integer('updated_at').notNull()
+},t=>({unique:uniqueIndex('uq_ai_reaction_actor').on(t.chatId,t.messageId,t.actorKey)}));
+
+export const aiReactionTotals=table('ai_reaction_totals',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),reactions:json('reactions').notNull(),
+ updatedAt:integer('updated_at').notNull()
+},t=>({unique:uniqueIndex('uq_ai_reaction_total').on(t.chatId,t.messageId)}));
+
+export const aiFindings=table('ai_findings',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),title:text('title').notNull(),
+ statement:text('statement').notNull(),status:text('status').notNull().default('proposed'),
+ evidence:json('evidence').notNull(),periodStart:integer('period_start').notNull(),
+ periodEnd:integer('period_end').notNull(),
+ reviewedBy:integer('reviewed_by'),reviewedAt:integer('reviewed_at'),
+ correctedStatement:text('corrected_statement'),createdAt:integer('created_at').notNull(),
+ origin:text('origin').notNull().default('rules'),modelBatchKey:text('model_batch_key')
+},t=>({review:index('idx_ai_findings_org_status').on(t.orgId,t.status),
+ batch:uniqueIndex('uq_ai_model_batch_key').on(t.orgId,t.modelBatchKey)}));
+
+
+// Provider keys never enter Telegram Serverless. This per-organization *gateway*
+// capability is revocable and limited by the ServGo gateway's allowlist/quota.
+export const aiGatewaySettings=table('ai_gateway_settings',{
+ orgId:integer('org_id').primaryKey(),
+ capability:text('capability').notNull(),
+ active:integer('active').notNull().default(0),
+ configuredAt:integer('configured_at').notNull(),
+ allowOriginalPhotos:integer('allow_original_photos').notNull().default(0),
+ allowOriginalFiles:integer('allow_original_files').notNull().default(0)
+});
+export const aiAnalysisProgress=table('ai_analysis_progress',{
+ orgId:integer('org_id').primaryKey(),
+ cursorId:integer('cursor_id').notNull().default(0),
+ busyUntil:integer('busy_until').notNull().default(0),
+ lockToken:text('lock_token'),
+ updatedAt:integer('updated_at').notNull(),
+ lastAutoAttemptAt:integer('last_auto_attempt_at').notNull().default(0),
+ lastNightlyDate:text('last_nightly_date')
+});
+
+
+export const aiParticipants=table('ai_participants',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),actorKey:text('actor_key').notNull(),
+ alias:text('alias').notNull()
+},t=>({actor:uniqueIndex('uq_ai_participant_org').on(t.orgId,t.actorKey)}));
+
+
+// One tenant-wide calibration clock. A due review is dispatched on the next
+// observed event; a separate trusted scheduler is required for exact deadlines.
+export const aiCalibrationSchedules=table('ai_calibration_schedules',{
+ orgId:integer('org_id').primaryKey(),
+ dueAt:integer('due_at').notNull(),
+ lastSentAt:integer('last_sent_at'),
+ busyUntil:integer('busy_until').notNull().default(0),
+ claimToken:text('claim_token')
+});
+
+export const aiPhotoReviews=table('ai_photo_reviews',{
+ messageRowId:integer('message_row_id').primaryKey(),
+ orgId:integer('org_id').notNull(),
+ status:text('status').notNull().default('pending'),
+ busyUntil:integer('busy_until').notNull().default(0),
+ claimToken:text('claim_token'),
+ completedAt:integer('completed_at'),
+ result:json('result')
+},t=>({org:index('idx_ai_photo_review_org').on(t.orgId)}));
+
+export const aiMediaJobs=table('ai_media_jobs',{
+ messageRowId:integer('message_row_id').primaryKey(),
+ orgId:integer('org_id').notNull(),
+ chatId:integer('chat_id').notNull(),
+ kind:text('kind').notNull(),
+ status:text('status').notNull().default('pending'),
+ attempts:integer('attempts').notNull().default(0),
+ nextAttemptAt:integer('next_attempt_at').notNull().default(0),
+ updatedAt:integer('updated_at').notNull()
+},t=>({orgStatus:index('idx_ai_media_job_queue').on(t.orgId,t.status,t.nextAttemptAt)}));
+
+export const aiDirtyMessages=table('ai_dirty_messages',{
+ id:integer('id').primaryKey({autoIncrement:true}),
+ orgId:integer('org_id').notNull(),chatId:integer('chat_id').notNull(),
+ messageId:integer('message_id').notNull(),
+ updatedAtMs:integer('updated_at_ms').notNull(),
+ processedAtMs:integer('processed_at_ms').notNull().default(0)
+},t=>({unique:uniqueIndex('uq_ai_dirty_org_message').on(t.orgId,t.chatId,t.messageId),
+ pending:index('idx_ai_dirty_pending').on(t.orgId,t.updatedAtMs)}));

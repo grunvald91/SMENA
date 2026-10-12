@@ -282,6 +282,48 @@ function dashboardReportsPanel(d){
     d.assignments.some(a=>a.status==='missing')?table(['Дата','Сотрудник','Смена'],d.assignments.filter(a=>a.status==='missing').map(a=>[reportDate(a.workDate),lookup(d.employees,a.employeeId)?.name,a.templateName])):
      ui('p',{className:'muted'},'Пропущенных назначенных смен за период не обнаружено.')));
 }
+function dashboardAiPanel(){
+ const status=ui('p',{className:'muted'},'Проверка состояния ИИ...');
+ const capability=ui('input',{type:'password',autocomplete:'new-password',placeholder:'Ключ сервиса ServGo'});
+ const photoOptIn=ui('input',{type:'checkbox'});
+ const connect=ui('button',{type:'submit'},'Подключить автоматический анализ');
+ const form=ui('form',{className:'form-grid'},
+  ui('label',{className:'field'},'Служебный ключ ServGo',capability),
+  ui('label',{className:'field'},photoOptIn,'Разрешить автоматический анализ рабочих фотографий, документов, голосовых сообщений и других поддерживаемых медиафайлов, включая передачу оригиналов провайдеру, когда подготовка недоступна'),
+  ui('p',{className:'muted'},'Разрешение задаётся один раз при подключении. Модель не получает Telegram ID и ключи бота.'),
+  connect);
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();connect.disabled=true;
+  try{
+   await call('ownerAiAnalysis',{action:'configure',capability:capability.value.trim(),allowOriginalPhotos:photoOptIn.checked});
+   capability.value='';
+   msg('Автоматическое наблюдение настроено. Новые сообщения и фото обрабатываются без ручного запуска.');
+   await refresh();
+  }catch(err){msg(err.message,true);}finally{connect.disabled=false;}
+ });
+ const disable=ui('button',{className:'outline',onclick:async()=>{
+  try{await call('ownerAiAnalysis',{action:'disable'});msg('Внешний ИИ отключён, сохранённые данные не удалены');await refresh();}
+  catch(err){msg(err.message,true);}
+ }},'Отключить внешний ИИ');
+ const latest=ui('p',{className:'muted'},'Проверка статуса фотографий...');
+ const refresh=async()=>{
+  try{
+   const [s,p]=await Promise.all([call('ownerAiAnalysis',{action:'status'}),call('ownerAiPhoto',{action:'list'})]);
+   status.textContent=s.configured
+    ?'Наблюдение включено. Очередь глубокого анализа: приблизительно '+s.pending+' записей. Последний завершённый ночной проход: '+(s.lastNightlyDate||'пока нет')+'. Свежие вопросы рассматриваются непосредственно по сообщениям.'
+    :'Сначала подключите шлюз. Пока он не настроен, сообщения накапливаются локально.';
+   const photos=p.photos||[];
+   latest.textContent='Контрольные снимки: '+photos.filter(x=>x.status==='done').length+' проверено из '+photos.length+' последних. Обработка автоматическая.';
+   disable.disabled=!s.configured;
+  }catch(err){status.textContent='Статус пока недоступен: '+err.message;}
+ };
+ refresh();
+ return ui('section',{className:'panel'},
+  ui('h3',{},'ИИ-память бизнеса'),
+  ui('p',{},'Владелец подключает группу один раз через /ai_on. Затем ServGo наблюдает за перепиской, обрабатывает доступные события, накапливает гипотезы и сам присылает обзор для подтверждения.'),
+  status,form,disable,latest,
+  ui('p',{className:'muted'},'Новый режим: глубокий анализ после накопления 30 событий и ночной проход по Москве (03:00). В личном чате бота просто задайте вопрос — он проверит свежую переписку. Ночной запуск без сообщений потребует отдельного планировщика на сервере.'));
+}
 function dashboardSettingsPanel(d){
  const name=textField('ФИО сотрудника');const tgId=textField('Telegram ID','number');const rate=textField('Ставка за час, ₽','number','300');
  const employeeForm=ui('form',{className:'form-grid'},name.field,tgId.field,rate.field,ui('button',{type:'submit'},'Добавить сотрудника'));

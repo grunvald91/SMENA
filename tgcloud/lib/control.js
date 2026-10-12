@@ -2,6 +2,7 @@ import {db,api,InputFile,BotApiError} from 'sdk';
 import {eq,and,isNull,desc,inArray} from 'sdk/db';
 import {organizations,locations,employees,shifts,devices,controlRequests,controlSubmissions,auditLog} from '../schema.js';
 import {requireOwner,ownerOrg,resolvePhotoQr} from './service.js';
+import {capturePublishedPhoto} from './ai-media.js';
 import {requireInput} from './errors.js';
 import {nonce} from './security.js';
 import {validateCloseComment} from './schedule.js';
@@ -108,16 +109,20 @@ export async function completeControl(tgId,submissionId,photos,comment){
  const at=now(),reserved=await db.update(controlSubmissions).set({status:'uploading',comment:note}).where(and(eq(controlSubmissions.id,sub.id),eq(controlSubmissions.status,'pending'))).run();
  requireInput(reserved.rowsAffected===1,'IN_PROGRESS','Фотографии уже отправляются');
  const caption=controlCaption({request,employee:person.name,location:loc.name,timezone:org.timezone,at,comment:note});
+ let saved=[];
  try{
   const reply=request.messageId?{reply_parameters:{message_id:request.messageId,allow_sending_without_reply:true}}:{};
   const files=bytes.map((b,i)=>new InputFile(b,`control-${i+1}.jpg`,{type:'image/jpeg'}));
   const messages=files.length===1?[await api.sendPhoto({chat_id:loc.chatId,photo:files[0],caption,...reply})]:await api.sendMediaGroup({chat_id:loc.chatId,media:files.map((file,i)=>({type:'photo',media:file,...(i===0?{caption}:{})})),...reply});
-  const saved=messages.map(m=>({messageId:m.message_id,fileId:m.photo?.at(-1)?.file_id}));
+  saved=messages.map(m=>({messageId:m.message_id,fileId:m.photo?.at(-1)?.file_id}));
   requireInput(saved.length===files.length&&saved.every(m=>m.messageId&&m.fileId),'TELEGRAM_PHOTO','Telegram не подтвердил все фотографии');
   await db.update(controlSubmissions).set({status:'done',completedAt:at,photos:saved}).where(eq(controlSubmissions.id,sub.id)).run();
  }catch(e){
   await db.update(controlSubmissions).set({status:e instanceof BotApiError&&e.code>=400&&e.code<500?'pending':'uncertain'}).where(eq(controlSubmissions.id,sub.id)).run();throw e;
  }
  await db.insert(auditLog).values({orgId:org.id,actorTgId:tgId,action:'control.completed',refId:sub.id,at,data:{requestId:request.id,photoCount:bytes.length,late:at>request.deadlineAt}}).run();
+ // AI observation must never turn a successful photo-control delivery into a failure.
+ try{for(const p of saved){await capturePublishedPhoto({orgId:org.id,chatId:loc.chatId,messageId:p.messageId,employeeTgId:tgId,fileId:p.fileId,caption,at});}}
+ catch(e){console.error('AI control media capture failed',e?.code||e?.name||'unknown');}
  return {done:true,photoCount:bytes.length,late:at>request.deadlineAt};
 }

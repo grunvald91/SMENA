@@ -2,9 +2,9 @@ export const rows={},sent=[];
 export let failure=null;
 export function reset(){for(const k of Object.keys(rows))delete rows[k];sent.length=0;failure=null;}
 export function failWith(e){failure=e;}
-const names=['organizations','locations','employees','shifts','devices','deviceChallenges','qrPasses','shiftEvents','bonuses','auditLog','photoIntents','shiftTemplates','shiftAssignments','controlRequests','controlSubmissions'];
+const names=['organizations','locations','employees','shifts','devices','deviceChallenges','qrPasses','shiftEvents','bonuses','auditLog','photoIntents','shiftTemplates','shiftAssignments','controlRequests','controlSubmissions','aiChatSettings','aiMessages','aiMediaJobs'];
 const make=name=>new Proxy({name},{get:(t,p)=>p==='name'?t.name:{table:name,key:p}});
-export const [organizations,locations,employees,shifts,devices,deviceChallenges,qrPasses,shiftEvents,bonuses,auditLog,photoIntents,shiftTemplates,shiftAssignments,controlRequests,controlSubmissions]=names.map(make);
+export const [organizations,locations,employees,shifts,devices,deviceChallenges,qrPasses,shiftEvents,bonuses,auditLog,photoIntents,shiftTemplates,shiftAssignments,controlRequests,controlSubmissions,aiChatSettings,aiMessages,aiMediaJobs]=names.map(make);
 export const eq=(c,v)=>r=>r[c.key]===v;
 export const lt=(c,v)=>r=>r[c.key]<v;
 export const lte=(c,v)=>r=>r[c.key]<=v;

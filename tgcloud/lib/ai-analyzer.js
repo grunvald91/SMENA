@@ -1,0 +1,145 @@
+import {db} from 'sdk';
+import {eq,and,gt,asc,inArray,desc,lte} from 'sdk/db';
+import {aiMessages,aiReactions,aiFindings,aiGatewaySettings,aiAnalysisProgress,aiChatSettings,employees,aiParticipants,aiReactionTotals} from '../schema.js';
+import {requireOwner} from './service.js';
+import {requireInput} from './errors.js';
+import {nonce} from './security.js';
+import {buildPrivateBatch,groundBatchFindings} from './ai-batch.js';
+import {callServGoAiGateway} from './ai-gateway.js';
+import {pendingChangedMessages,finishChangedMessages} from './ai-dirty.js';
+import {loadOnePreviousContextPage} from './ai-context-fallback.js';
+import {analyzeWithSingleLookback} from './ai-context-repair.js';
+const clock=()=>Math.floor(Date.now()/1000);
+
+export async function configureAiGateway(ownerTgId,capability,enabled=true){
+ const org=await requireOwner(ownerTgId);
+ // This is a limited gateway capability, NEVER a model API key.
+ if(enabled)requireInput(typeof capability==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(capability),'BAD_GATEWAY_TOKEN','Нужен ключ доступа к шлюзу ServGo');
+ const found=await db.select().from(aiGatewaySettings).where(eq(aiGatewaySettings.orgId,org.id)).get();
+ if(!enabled){
+  if(found)await db.update(aiGatewaySettings).set({active:0}).where(eq(aiGatewaySettings.orgId,org.id)).run();
+  return {configured:!!found,active:false};
+ }
+ const values={capability,active:1,configuredAt:clock()};
+ if(found)await db.update(aiGatewaySettings).set(values).where(eq(aiGatewaySettings.orgId,org.id)).run();
+ else await db.insert(aiGatewaySettings).values({orgId:org.id,...values}).run();
+ return {configured:true,active:true};
+}
+
+export async function aiProcessingStatus(ownerTgId){
+ const org=await requireOwner(ownerTgId);
+ const config=await db.select().from(aiGatewaySettings).where(eq(aiGatewaySettings.orgId,org.id)).get();
+ const progress=await db.select().from(aiAnalysisProgress).where(eq(aiAnalysisProgress.orgId,org.id)).get();
+ const last=await db.select().from(aiMessages).where(eq(aiMessages.orgId,org.id)).orderBy(desc(aiMessages.id)).limit(1).get();
+ return {configured:!!config?.active,cursor:progress?.cursorId||0,latest:last?.id||0,
+  lastNightlyDate:progress?.lastNightlyDate||null,pending:Math.max(0,(last?.id||0)-(progress?.cursorId||0))};
+}
+
+// At most ONE bounded model call per invocation. Retry same batch on error.
+// This avoids spending provider tokens on every Telegram message.
+export async function analyzeNextBatch(ownerTgId){
+ const org=await requireOwner(ownerTgId);
+ const config=await db.select().from(aiGatewaySettings).where(and(eq(aiGatewaySettings.orgId,org.id),eq(aiGatewaySettings.active,1))).get();
+ requireInput(!!config,'AI_NOT_CONFIGURED','ИИ-шлюз пока не настроен');
+ const enabled=await db.select().from(aiChatSettings).where(and(eq(aiChatSettings.orgId,org.id),eq(aiChatSettings.active,1))).all();
+ requireInput(enabled.length>0,'NO_CHAT','Сначала включите наблюдение в рабочей группе');
+ const now=clock(),lock=nonce(24);
+ await db.insert(aiAnalysisProgress).values({orgId:org.id,cursorId:0,busyUntil:0,lockToken:null,updatedAt:now})
+  .onConflictDoUpdate({target:aiAnalysisProgress.orgId,set:{updatedAt:now}}).run();
+ const got=await db.update(aiAnalysisProgress).set({busyUntil:now+120,lockToken:lock,updatedAt:now})
+  .where(and(eq(aiAnalysisProgress.orgId,org.id),lte(aiAnalysisProgress.busyUntil,now))).run();
+ requireInput(got.rowsAffected===1,'AI_BUSY','Предыдущая проверка ещё выполняется');
+ try{
+  const progress=await db.select().from(aiAnalysisProgress).where(eq(aiAnalysisProgress.orgId,org.id)).get();
+  const dirty=await pendingChangedMessages(org.id,10);
+  const page=await db.select().from(aiMessages).where(and(eq(aiMessages.orgId,org.id),gt(aiMessages.id,progress.cursorId)))
+   .orderBy(asc(aiMessages.id)).limit(60-dirty.length).all();
+  if(!page.length&&!dirty.length)return {processed:0,proposed:0,remaining:false};
+  const authorized=new Set(enabled.map(c=>c.chatId));
+  const changedMessages=[];
+  for(const event of dirty){
+   const message=await db.select().from(aiMessages).where(and(eq(aiMessages.orgId,org.id),
+    eq(aiMessages.chatId,event.chatId),eq(aiMessages.messageId,event.messageId))).get();
+   if(message)changedMessages.push(message);
+  }
+  const unique=new Map();
+  for(const m of [...page,...changedMessages])if(authorized.has(m.chatId))unique.set(m.id,m);
+  const messages=[...unique.values()];
+  const lastId=page.at(-1)?.id||progress.cursorId;
+  if(!messages.length){
+   await db.update(aiAnalysisProgress).set({cursorId:lastId,updatedAt:clock()})
+    .where(and(eq(aiAnalysisProgress.orgId,org.id),eq(aiAnalysisProgress.lockToken,lock))).run();
+   await finishChangedMessages(org.id,dirty);
+   return {processed:page.length,proposed:0,skipped:page.length};
+  }
+  const first=Math.min(...messages.map(x=>x.sentAt)),last=Math.max(...messages.map(x=>x.sentAt));
+  const confirmed=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),inArray(aiFindings.status,['confirmed','corrected','rejected'])))
+   .orderBy(desc(aiFindings.reviewedAt)).limit(25).all();
+  const ids=messages.map(x=>x.messageId);
+  const reactions=await db.select().from(aiReactions).where(and(eq(aiReactions.orgId,org.id),inArray(aiReactions.messageId,ids))).limit(400).all();
+  const anonymous=await db.select().from(aiReactionTotals).where(and(eq(aiReactionTotals.orgId,org.id),inArray(aiReactionTotals.messageId,ids))).limit(200).all();
+  const team=await db.select().from(employees).where(eq(employees.orgId,org.id)).limit(200).all();
+  // Actor keys are retained only inside ServGo. The provider sees stable random aliases.
+  const keys=[...new Set([...messages.map(m=>m.authorTgId?'u:'+m.authorTgId:m.senderChatId?'c:'+m.senderChatId:null),...team.map(e=>e.tgId?'u:'+e.tgId:null)].filter(Boolean))];
+  const actorAliases={};
+  for(const key of keys){
+   await db.insert(aiParticipants).values({orgId:org.id,actorKey:key,alias:'участник-'+nonce(8)})
+    .onConflictDoUpdate({target:[aiParticipants.orgId,aiParticipants.actorKey],set:{orgId:org.id}}).run();
+  }
+  if(keys.length){
+   const pseudonyms=await db.select().from(aiParticipants).where(and(eq(aiParticipants.orgId,org.id),inArray(aiParticipants.actorKey,keys))).all();
+   for(const p of pseudonyms)actorAliases[p.actorKey]=p.alias;
+  }
+  const contextOptions={confirmed,
+   reactions:[...reactions,...anonymous].filter(r=>messages.some(m=>r.chatId===m.chatId&&r.messageId===m.messageId)),
+   employeeNames:team.map(x=>({name:x.name,alias:actorAliases['u:'+x.tgId]||'[СОТРУДНИК]'})),
+   actorAliases};
+  const context=await analyzeWithSingleLookback({
+   messages,options:contextOptions,
+   fetchPrevious:primary=>loadOnePreviousContextPage(org.id,primary,enabled.map(x=>x.chatId)),
+   askModel:payload=>callServGoAiGateway(config.capability,payload)
+  });
+  const {response,sourceMap,inconclusive,previousMessages:extraMessages}=context;
+  const candidates=inconclusive?[]:groundBatchFindings(response.findings,sourceMap);
+  requireInput(inconclusive||response.findings.length===0||candidates.length>0,
+   'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
+  // Remember an unresolved context gap, but never label it a factual finding.
+  // Cursor may advance without silently equating "processed" with "understood".
+  if(inconclusive){
+   const unresolvedKey='inconclusive:p'+(page[0]?.id||progress.cursorId)+':'+lastId+
+    ':d'+dirty.map(x=>x.id+'-'+x.updatedAtMs).join('.');
+   const knownGap=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),
+    eq(aiFindings.modelBatchKey,unresolvedKey))).get();
+   if(!knownGap){
+    await db.insert(aiFindings).values({
+     orgId:org.id,title:'Контекст пока недостаточен',
+     statement:'Даже после однократного обращения к предыдущим сообщениям ИИ не смог сделать обоснованный вывод. Определённые утверждения не сформированы.',
+     evidence:messages.slice(0,3).map(m=>({chatId:m.chatId,messageId:m.messageId,sentAt:m.sentAt})),
+     periodStart:first,periodEnd:last,status:'unresolved',origin:'context_gap',
+     modelBatchKey:unresolvedKey,createdAt:clock()
+    }).run();
+   }
+  }
+  let proposed=0;
+  for(const [i,item] of candidates.entries()){
+   // Stable key stops duplicate findings if a request succeeded but cursor update failed.
+   const batchKey='p'+(page[0]?.id||progress.cursorId)+':'+lastId+':d'+dirty.map(x=>x.id+'-'+x.updatedAtMs).join('.')+':'+i;
+   const existing=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),eq(aiFindings.modelBatchKey,batchKey))).get();
+   if(existing)continue;
+   await db.insert(aiFindings).values({orgId:org.id,title:item.title,statement:item.statement,
+    evidence:item.evidence,periodStart:first,periodEnd:last,status:'proposed',origin:'model',
+    modelBatchKey:batchKey,createdAt:clock()}).run();
+   proposed++;
+  }
+  const changed=await db.update(aiAnalysisProgress).set({cursorId:lastId,updatedAt:clock()})
+   .where(and(eq(aiAnalysisProgress.orgId,org.id),eq(aiAnalysisProgress.lockToken,lock),eq(aiAnalysisProgress.cursorId,progress.cursorId))).run();
+  requireInput(changed.rowsAffected===1,'AI_PROGRESS_CONFLICT','Прогресс анализа изменился');
+  await finishChangedMessages(org.id,dirty);
+  return {processed:page.length,rechecked:dirty.length,proposed,through:lastId,modelUsed:true,
+   contextInsufficient:inconclusive,previousContextMessages:extraMessages};
+ }finally{
+  // Lock does not prevent normal attendance/QR operations, even on API failure.
+  await db.update(aiAnalysisProgress).set({busyUntil:0,lockToken:null,updatedAt:clock()})
+   .where(and(eq(aiAnalysisProgress.orgId,org.id),eq(aiAnalysisProgress.lockToken,lock))).run();
+ }
+}
