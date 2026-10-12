@@ -72,3 +72,12 @@ test('previous context retains cross-boundary reply linkage',async()=>{
  assert.equal(r.payload.messages[0].replyTo,'c1');
  assert.equal(r.sourceMap.c1.messageId,30);
 });
+
+test('old-only citation never creates a new business hypothesis',()=>{
+ const sourceMap=Object.assign(Object.create(null),{
+  c1:{chatId:-100123,messageId:1,sentAt:1791730001}
+ });
+ const out=groundBatchFindings([{title:'Вывод',statement:'Устаревшая история не подтверждает текущие события',
+  sources:['c1','m999']}],sourceMap);
+ assert.equal(out.length,0);
+});
