@@ -25,7 +25,7 @@ export function formatOwnerAnswer(reply,sourceMap,coverage){
   problems.push('История длиннее доступной оперативной выборки; выводы не следует считать исчерпывающими.');
  }
  const deduplicated=[...new Set(problems.map(x=>x.slice(0,250)))];
- let answer=String(reply.answer||'').slice(0,3000).trim();
+ let answer=String(reply.answer||'').slice(0,2300).trim();
  if(!sourceLinks.length)answer='По доступным сообщениям не найдено подтверждённых источников для содержательного вывода. Уточните вопрос или дождитесь новых данных.';
  if(sourceLinks.length)answer+='\n\nИсточники:\n'+sourceLinks.map(s=>'• '+s).join('\n');
  if(deduplicated.length)answer+='\n\nОграничения:\n'+deduplicated.map(x=>'• '+x).join('\n');
