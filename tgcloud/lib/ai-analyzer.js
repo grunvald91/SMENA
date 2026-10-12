@@ -103,6 +103,23 @@ export async function analyzeNextBatch(ownerTgId){
   const candidates=inconclusive?[]:groundBatchFindings(response.findings,sourceMap);
   requireInput(inconclusive||response.findings.length===0||candidates.length>0,
    'AI_UNGROUNDED_RESPONSE','Модель не предоставила проверяемых ссылок; прогресс не изменён');
+  // Remember an unresolved context gap, but never label it a factual finding.
+  // Cursor may advance without silently equating "processed" with "understood".
+  if(inconclusive){
+   const unresolvedKey='inconclusive:p'+(page[0]?.id||progress.cursorId)+':'+lastId+
+    ':d'+dirty.map(x=>x.id+'-'+x.updatedAtMs).join('.');
+   const knownGap=await db.select().from(aiFindings).where(and(eq(aiFindings.orgId,org.id),
+    eq(aiFindings.modelBatchKey,unresolvedKey))).get();
+   if(!knownGap){
+    await db.insert(aiFindings).values({
+     orgId:org.id,title:'Контекст пока недостаточен',
+     statement:'Даже после однократного обращения к предыдущим сообщениям ИИ не смог сделать обоснованный вывод. Определённые утверждения не сформированы.',
+     evidence:messages.slice(0,3).map(m=>({chatId:m.chatId,messageId:m.messageId,sentAt:m.sentAt})),
+     periodStart:first,periodEnd:last,status:'unresolved',origin:'context_gap',
+     modelBatchKey:unresolvedKey,createdAt:clock()
+    }).run();
+   }
+  }
   let proposed=0;
   for(const [i,item] of candidates.entries()){
    // Stable key stops duplicate findings if a request succeeded but cursor update failed.
