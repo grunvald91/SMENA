@@ -7,9 +7,10 @@ import {analyzeOwnerPhoto} from './ai-vision.js';
 import {analyzeOwnerAttachment} from './ai-attachment.js';
 import {maybeSendCalibrationReview} from './ai-calibration.js';
 import {pendingChangedMessages} from './ai-dirty.js';
+import {deepAnalysisDecision,DEEP_MESSAGE_THRESHOLD} from './ai-schedule-rules.js';
 
 const clock=()=>Math.floor(Date.now()/1000);
-const BATCH_SIZE=10,MIN_INTERVAL=15*60,PHOTO_BACKOFF=10*60;
+const PHOTO_BACKOFF=10*60;
 
 export async function processObservedEvent(chatId,{force=false}={}){
  try{
@@ -66,16 +67,37 @@ export async function processObservedEvent(chatId,{force=false}={}){
   const cursor=progress?.cursorId||0;
   const page=await db.select().from(aiMessages)
    .where(and(eq(aiMessages.orgId,org.id),gt(aiMessages.id,cursor)))
-   .orderBy(asc(aiMessages.id)).limit(BATCH_SIZE).all();
-  const dirty=await pendingChangedMessages(org.id,5);
-  if(!page.length&&!dirty.length)return outcome;
-  const due=force||page.length===BATCH_SIZE||dirty.length===5||!progress?.lastAutoAttemptAt||
-   clock()-progress.lastAutoAttemptAt>=MIN_INTERVAL;
-  if(!due)return outcome;
+   .orderBy(asc(aiMessages.id)).limit(DEEP_MESSAGE_THRESHOLD).all();
+  const dirty=await pendingChangedMessages(org.id,DEEP_MESSAGE_THRESHOLD);
+  const policy=deepAnalysisDecision({pendingMessages:page.length,pendingChanges:dirty.length,
+   lastNightlyDate:progress?.lastNightlyDate});
+  outcome.analysisReason=policy.reason;
+  if(!page.length&&!dirty.length){
+   // No model call is useful when the business chat has had no new material.
+   if(policy.nightlyWindow&&progress)await db.update(aiAnalysisProgress)
+    .set({lastNightlyDate:policy.moscowDate}).where(eq(aiAnalysisProgress.orgId,org.id)).run();
+   return outcome;
+  }
+  if(!force&&!policy.trigger)return outcome;
   if(progress)await db.update(aiAnalysisProgress).set({lastAutoAttemptAt:clock()})
    .where(eq(aiAnalysisProgress.orgId,org.id)).run();
-  try{const batch=await analyzeNextBatch(org.ownerTgId);outcome.text=batch.processed>0;}
-  catch(e){console.warn('AI text processing deferred',e?.code||e?.name||'unknown');}
+  try{
+   const batch=await analyzeNextBatch(org.ownerTgId);
+   outcome.text=batch.processed>0||batch.rechecked>0;
+   // Only mark a nightly pass complete when the entire backlog has been drained.
+   // The nightly scheduler can keep invoking this module until that is true.
+   if(policy.nightlyWindow){
+    const after=await db.select().from(aiMessages)
+     .where(and(eq(aiMessages.orgId,org.id),gt(aiMessages.id,batch.through||cursor)))
+     .orderBy(asc(aiMessages.id)).limit(1).all();
+    const changed=await pendingChangedMessages(org.id,1);
+    if(!after.length&&!changed.length){
+     await db.update(aiAnalysisProgress).set({lastNightlyDate:policy.moscowDate})
+      .where(eq(aiAnalysisProgress.orgId,org.id)).run();
+     outcome.nightlyCompleted=true;
+    }
+   }
+  }catch(e){console.warn('AI text processing deferred',e?.code||e?.name||'unknown');}
   return outcome;
  }catch(e){
   console.warn('AI automatic event processing deferred',e?.code||e?.name||'unknown');
