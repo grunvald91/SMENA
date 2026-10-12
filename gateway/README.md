@@ -89,3 +89,14 @@ Two AI paths intentionally coexist:
 **Operational limitation:** `/v1/answer` is coded but not deployed. The event-driven nightly rule only wakes on Telegram updates. To GUARANTEE daily analysis in a silent group, the VPS must run a 03:00 Moscow scheduled worker with durable access to a mirrored ingestion/event queue and sync its results to authoritative ServGo memory. The Serverless database is NOT remotely readable by the VPS in the current architecture, and Mini App endpoints validate Telegram user identity, so the gateway currently cannot invoke a scheduled database job directly. Do not claim unattended wall-clock daily analysis until that bridge and scheduler are built, tested and deployed. Queue and downstream provider calls must be individually retried and idempotent.
 
 A suitable operational cron expression is `0 3 * * *` with the process timezone set to `Europe/Moscow`; by itself it does not provide the authenticated data bridge. Do not place API credentials in the crontab line or commit them. Verify the real VPS timezone, Telegram event-lag, and monthly model billing caps before enabling the schedule.
+
+
+## One-time historical context recovery (Serverless-only phase)
+
+Do **not** add a VPS scheduler or background cron in this phase. Telegram Serverless is the sole event trigger; the model gateway only proxies credential-protected provider calls. A "nightly" analysis after 03:00 Europe/Moscow requires a subsequent Telegram event; no clock-time guarantee is offered while all observed chats are silent.
+
+The model is now asked to return `needs_previous_context` when the present 30–60 events do not explain the business situation. The ServGo handler then loads **one** prior page (maximum 30 previous events in total across active work chats, no cross-tenant reads) and sends a **single** follow-up model request with `previousContext: [{ref:'c1',...},...]`. Primary events remain `m1..m60`. The model response is always final after that: no recursive history queries, no extra model passes. For fully unresolved questions, the owner sees a statement of uncertainty, not a confident diagnosis. Unresolved deep batches are persisted separately as `status='unresolved'` and excluded from confirmed business knowledge.
+
+**Scope:** previous-message recovery applies to deep chat analysis and owner free-text questions, rather than causing every individual media upload to be analyzed twice. The old messages are explanatory context; newly proposed deep findings must also cite a primary source. These extra model calls count toward the gateway's existing provider quota.
+
+Full Node suite, Serverless SDK migration, model contract and live provider checks remain release gates. This branch is still not deployed.
