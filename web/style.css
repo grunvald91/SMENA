@@ -7,3 +7,102 @@
 .mini-btn{min-height:33px;padding:7px 10px;font-size:12px;white-space:nowrap}
 
 .control-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid #dce5f0;border-radius:14px}.control-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.control-thumb{display:flex;flex-direction:column;gap:6px}.control-photo{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px}
+
+
+/* Mobile-first correction for Telegram Mini Apps.
+   No side scrolling: all six tabs and four primary actions are visible. */
+html,body{width:100%;max-width:100%;overflow-x:clip}
+main,#root,.dashboard,.dashboard-stack,.dashboard-header,.header-actions,.dashboard-nav,
+.panel,.columns,.stats-grid,.stat,.table-scroll,.control-card,.control-gallery{
+ min-width:0;max-width:100%
+}
+main{width:100%}
+.dashboard-header>div:first-child,.section-intro,.panel-head,.field{min-width:0}
+.dashboard-header h1,.dashboard-header p,.dashboard-header .eyebrow,
+.panel h1,.panel h2,.panel h3,.stat,.notice,.error{
+ overflow-wrap:anywhere
+}
+.header-actions{min-width:0;flex-wrap:wrap}
+.header-actions>*{min-width:0;max-width:100%}
+.dashboard-nav{
+ display:grid;grid-template-columns:repeat(6,minmax(0,1fr));
+ width:100%;overflow:visible
+}
+.dashboard-nav .tab{
+ min-width:0;width:100%;white-space:normal;overflow-wrap:anywhere;
+ padding:11px 7px;text-align:center;line-height:1.25
+}
+.stats-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.stats-grid .stat{min-width:0}
+.stats-grid .stat strong{overflow-wrap:anywhere}
+.table-scroll{min-width:0;max-width:100%}
+.table-scroll td,.table-scroll th{overflow-wrap:anywhere}
+.bar-row{min-width:0;grid-template-columns:minmax(0,160px) minmax(0,1fr) minmax(42px,60px)}
+.bar-row>*{min-width:0}
+img,video,svg,canvas{max-width:100%}
+@media(max-width:1050px){
+ .dashboard-header{align-items:stretch;flex-direction:column}
+ .header-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;width:100%}
+ .header-actions>button,.header-actions>input{
+  width:100%;min-width:0;height:auto;min-height:44px;
+  padding:10px 8px;white-space:normal;overflow-wrap:anywhere;text-align:center
+ }
+ .dashboard-nav{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:650px){
+ main{padding:14px 12px calc(58px + env(safe-area-inset-bottom,0px))}
+ .dashboard{gap:16px}
+ .dashboard-header{gap:12px;padding-top:8px}
+ .dashboard-header .header-actions{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px
+ }
+ .dashboard-nav{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;padding:7px;border-radius:15px
+ }
+ .dashboard-nav .tab{
+  flex:none;min-height:43px;padding:10px 6px;
+  font-size:clamp(12px,3.6vw,15px);line-height:1.2
+ }
+ .panel{min-width:0;padding:14px;gap:12px}
+ .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .stat{min-width:0;padding:13px;min-height:105px}
+ .columns{grid-template-columns:minmax(0,1fr)}
+ .bar-row{grid-template-columns:minmax(0,86px) minmax(0,1fr) minmax(40px,50px);gap:7px;font-size:11px}
+ .bar-row strong{font-size:11px}
+ .header-actions input[type=month]{font-size:14px}
+ /* All data remains visible vertically, with the original headers as labels. */
+ .table-scroll{width:100%;overflow:visible}
+ .table-scroll table{display:block;width:100%;min-width:0}
+ .table-scroll thead{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0
+ }
+ .table-scroll tbody{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+ .table-scroll tbody tr{
+  display:block;min-width:0;padding:8px 12px;
+  background:#fff;border:1px solid #e0e8f2;border-radius:12px
+ }
+ .table-scroll tbody td{
+  display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);
+  align-items:start;gap:10px;min-width:0;width:100%;
+  padding:9px 0;white-space:normal;font-size:13px;
+  overflow-wrap:anywhere;word-break:normal;text-align:left
+ }
+ .table-scroll tbody td:last-child{border-bottom:0}
+ .table-scroll tbody td::before{
+  content:attr(data-label);font-size:12px;font-weight:700;color:#627590
+ }
+ .table-scroll tbody td>*{max-width:100%;min-width:0}
+ .table-scroll .mini-btn{white-space:normal;width:100%;overflow-wrap:anywhere}
+ .control-gallery{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:350px){
+ main{padding-left:10px;padding-right:10px}
+ .header-actions{gap:6px}
+ .header-actions>button{padding:9px 5px;font-size:13px}
+ .dashboard-nav .tab{padding:9px 4px;font-size:12px}
+ .stats-grid{gap:7px}
+ .stat{padding:10px;min-height:96px}
+ .stat strong{font-size:18px}
+}
