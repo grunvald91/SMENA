@@ -84,7 +84,7 @@ img,video,svg,canvas{max-width:100%}
   background:#fff;border:1px solid #e0e8f2;border-radius:12px
  }
  .table-scroll tbody td{
-  display:grid;grid-template-columns:minmax(0,42%) minmax(0,58%);
+  display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);
   align-items:start;gap:10px;min-width:0;width:100%;
   padding:9px 0;white-space:normal;font-size:13px;
   overflow-wrap:anywhere;word-break:normal;text-align:left
