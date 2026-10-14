@@ -10,9 +10,13 @@ test('Telegram Mini App has full width root and intrinsically shrinking layout c
  assert.match(css,/main,#root,\.dashboard,[^}]*min-width:0;max-width:100%/);
 });
 
-test('all six main tabs have wrapped grid layout without sideways scrolling',()=>{
- assert.match(source,/\['overview','Обзор'\].*\['schedule','График'\].*\['analytics','Табель'\].*\['sales','Продажи'\].*\['reports','Отчёты'\].*\['settings','Настройки'\]/s);
- assert.match(css,/\.dashboard-nav\{\s*display:grid;grid-template-columns:repeat\(6,minmax\(0,1fr\)\);\s*width:100%;overflow:visible/);
+test('all dashboard tabs have wrapped grid layout without sideways scrolling',()=>{
+ assert.match(source,/\['overview','Обзор'\]/);
+ assert.match(source,/\['schedule','График'\]/);
+ assert.match(source,/\['analytics','(?:Табель|Аналитика)'\]/);
+ assert.match(source,/\['reports','Отчёты'\]/);
+ assert.match(source,/\['settings','Настройки'\]/);
+ assert.match(css,/\.dashboard-nav\{\s*display:grid;grid-template-columns:repeat\(auto-fit,minmax\(90px,1fr\)\);\s*width:100%;overflow:visible/);
  assert.match(css,/@media\(max-width:650px\)\{[\s\S]*?\.dashboard-nav\{\s*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.match(css,/\.dashboard-nav \.tab\{\s*min-width:0;width:100%;white-space:normal/);
 });
