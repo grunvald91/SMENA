@@ -24,7 +24,7 @@ test('all primary owner actions fit two equal columns on mobile',()=>{
 });
 
 test('tables display labelled vertical cards, not 520px scrolling tables, on phones',()=>{
- assert.match(source,/ui\('td',\{'data-label':String\(headers\[i\]\?\?' '\)\}/.source ? /ui\('td',\{'data-label':String\(headers\[i\]\?\?''\)\}/ : /data-label/);
+ assert.match(source,/ui\('td',\{'data-label':String\(headers\[i\]\?\?''\)\}/);
  assert.match(css,/@media\(max-width:650px\)\{[\s\S]*?\.table-scroll\{width:100%;overflow:visible\}/);
  assert.match(css,/\.table-scroll tbody td\{\s*display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(0,3fr\)/);
  assert.match(css,/content:attr\(data-label\)/);
