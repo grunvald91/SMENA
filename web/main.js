@@ -175,7 +175,7 @@ function textField(label,type='text',value=''){
 function lookup(items,id){return items.find(x=>x.id===id);}
 function table(headers,rows){
  const th=ui('thead',{},ui('tr',{},...headers.map(x=>ui('th',{},x))));
- const tb=ui('tbody',{},...rows.map(row=>ui('tr',{},...row.map(v=>ui('td',{},v??'—')))));
+ const tb=ui('tbody',{},...rows.map(row=>ui('tr',{},...row.map((v,i)=>ui('td',{'data-label':String(headers[i]??'')},v??'—')))));
  return ui('div',{className:'table-scroll'},ui('table',{},th,tb));
 }
 let dashboard={period:new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit'}).format(new Date()),data:null,active:'overview'};
