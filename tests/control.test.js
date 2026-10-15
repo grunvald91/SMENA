@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {controlDeadline,controlPhotos,controlStatus,controlCaption} from '../tgcloud/lib/control-rules.js';
 import {shiftPhotoCaption} from '../tgcloud/lib/shift-caption.js';
-import {portraitCrop} from '../web/portrait.js';
+import {portraitCrop,fullFrameSize} from '../web/portrait.js';
 const now=Date.parse('2026-10-10T12:00:00Z')/1000;
 test('control deadline uses organization timezone, rejects past, impossible dates and nonexistent DST time',()=>{
  assert.equal(controlDeadline('2026-10-10T16:00','Europe/Moscow',now),now+3600);
@@ -30,5 +30,12 @@ test('public group captions include comments, local time and late status within 
 });
 test('deadline flags come from response time, allow late response and show uncertain delivery',()=>{
  const r={deadlineAt:now};assert.equal(controlStatus(r,null,now),'Ожидается ответ');assert.match(controlStatus(r,null,now+1),/Просрочено/);
- assert.equal(controlStatus(r,{status:'done',completedAt:now},now+1),'Получено вовремя');assert.equal(controlStatus(r,{status:'done',completedAt:now+1},now+1),'Получено с опозданием');assert.match(controlStatus(r,{status:'uncertain'},now),/Проверьте/);
+ assert.equal(controlStatus(r,{status:'done',completedAt:now},now+1),'Получено · ждёт приёмки');assert.equal(controlStatus(r,{status:'done',completedAt:now+1},now+1),'Получено с опозданием · ждёт приёмки');assert.match(controlStatus(r,{status:'uncertain'},now),/Проверьте/);
+});
+
+test('workplace photos preserve full landscape frame including its edges',()=>{
+ assert.deepEqual(fullFrameSize(1920,1080),{width:1200,height:675});
+ assert.deepEqual(fullFrameSize(1080,1920),{width:675,height:1200});
+ assert.deepEqual(fullFrameSize(640,480),{width:640,height:480});
+ assert.throws(()=>fullFrameSize(0,480));
 });

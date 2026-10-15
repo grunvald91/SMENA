@@ -8,6 +8,7 @@ export function actor(ctx) {
 export async function handleEndpoint(fn){
  try{return await fn();}
  catch(e){
+  if(e instanceof EndpointError)throw e;
   if(e instanceof DomainError)throw new EndpointError(e.message,{code:e.code});
   console.error('endpoint error',e);
   throw new EndpointError('Внутренняя ошибка',{code:'INTERNAL_ERROR'});

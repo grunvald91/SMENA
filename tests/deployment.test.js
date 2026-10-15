@@ -19,8 +19,14 @@ test('release scripts require preflight and safe migrations',()=>{
  const deploy=txt('scripts/tgcloud_deploy.sh');
  assert.match(preflight,/npm run check/);
  assert.match(preflight,/npm run build/);
+ assert.match(preflight,/npm run build:kiosk/);
+ assert.match(preflight,/check_additive_org_migration.py/);
+ assert.match(preflight,/node --check/);
  assert.match(deploy,/migrate --dry-run --local/);
- assert.match(deploy,/migrate --safe/);
+ assert.match(deploy,/migrate --local --safe/);
+ assert.match(deploy,/SMENA_BACKUP_VERIFIED/);
+ assert.match(deploy,/SMENA_MIGRATION_REVIEWED/);
+ assert.ok(deploy.indexOf('migrate --local --safe') < deploy.indexOf('"$TG" push'),'Apply safe additive migrations before publishing handlers');
  assert.match(deploy,/webhook sync/);
  assert.doesNotMatch(deploy,/--force|--drop-pending|--yes/);
 });

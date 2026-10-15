@@ -1,5 +1,5 @@
 import {startTelegramQrScan} from './qr-scan.js';
-import {capturePortrait} from './portrait.js';
+import {captureFrame} from './portrait.js';
 import {controlTime} from '../tgcloud/lib/control-rules.js';
 export function createControlUI({element:e,render,call,state,T,home,msg}){
  const button=()=>e('button',{className:'outline',onclick:()=>show().catch(x=>msg(x.message,true))},'Фотоконтроль');
@@ -37,8 +37,25 @@ export function createControlUI({element:e,render,call,state,T,home,msg}){
    if(!data.requests.length)panel.append(e('p',{className:'muted'},'Запросов пока нет.'));
    for(const r of data.requests){
     const card=e('section',{className:'control-card'},e('h3',{},r.location),e('p',{},r.instruction),e('p',{className:'muted'},`До ${deadline(r)}`));
-    r.recipients.forEach(p=>card.append(e('p',{},`${p.name}: ${p.status}${p.photoCount?' · '+p.photoCount+' фото':''}${p.comment?' · '+p.comment:''}`)));
-    if(!r.notificationDelivered)card.append(e('p',{className:'error'},'Публикация запроса в группе не подтверждена. Проверьте группу.'),e('button',{className:'outline',onclick:async()=>{try{const ok=await call('notifyControl',{requestId:r.id});msg(ok?'Запрос опубликован.':'Доставка не подтверждена. Если сообщение уже есть, повторно оно не отправляется.');await show();}catch(x){msg(x.message,true);}}},'Проверить / повторить публикацию'));
+    r.recipients.forEach(p=>{
+     const line=e('section',{className:'control-card'},e('p',{},`${p.name}: ${p.status}${p.photoCount?' · '+p.photoCount+' фото':''}${p.comment?' · '+p.comment:''}`));
+     p.messageLinks?.forEach((url,i)=>line.append(e('a',{href:url,target:'_blank'},`Открыть фото ${i+1} в группе `)));
+     const numbers=e('input',{placeholder:'Номера сообщений с фото через запятую'});
+     const note=e('input',{placeholder:'Комментарий / основание решения',maxlength:500});
+     async function decide(action){try{await call('ownerControlAction',{requestId:r.id,submissionId:p.submissionId,revision:p.revision,action,note:note.value,messageIds:numbers.value.split(',').map(v=>Number(v.trim())),confirmed:true});await show();}catch(x){msg(x.message,true);}}
+     if(p.state==='done'&&!p.review){line.append(note,e('button',{onclick:()=>decide('accept')},'Принять'),e('button',{className:'outline',onclick:()=>decide('rework')},'Вернуть на доработку'));}
+     if(p.state==='done'&&p.review==='awaiting'){line.append(note,e('button',{onclick:()=>decide('accept')},'Принять'),e('button',{className:'outline',onclick:()=>decide('rework')},'Вернуть на доработку'));}
+     if(['uploading','uncertain'].includes(p.state))line.append(note,numbers,e('button',{className:'outline',onclick:()=>decide('deliveryMissing')},'Проверил группу: фото отсутствует'),e('button',{className:'outline',onclick:()=>decide('deliveryReceived')},'Проверил группу: фото получено'));
+     card.append(line);
+    });
+    if(!r.cancelled){
+     const why=e('input',{placeholder:'Причина отмены запроса',maxlength:500});card.append(why,e('button',{className:'outline',onclick:async()=>{try{await call('ownerControlAction',{requestId:r.id,action:'cancel',note:why.value,confirmed:true});await show();}catch(x){msg(x.message,true);}}},'Отменить запрос'));
+    }
+    if(['uncertain','sending'].includes(r.notificationState)&&!r.cancelled){const why=e('input',{placeholder:'Основание сверки доставки',maxlength:500}),number=e('input',{type:'number',placeholder:'Номер сообщения, если получено'});
+     async function settle(action){try{await call('ownerControlAction',{requestId:r.id,action,note:why.value,messageId:Number(number.value),confirmed:true});await show();}catch(x){msg(x.message,true);}}
+     card.append(why,number,e('button',{className:'outline',onclick:()=>settle('notificationMissing')},'Сообщения нет — разрешить повтор'),e('button',{className:'outline',onclick:()=>settle('notificationReceived')},'Сообщение получено — подтвердить'));
+    }
+    if(!r.notificationDelivered&&!r.cancelled)card.append(e('p',{className:'error'},'Публикация запроса в группе не подтверждена. Проверьте группу.'),e('button',{className:'outline',onclick:async()=>{try{const ok=await call('notifyControl',{requestId:r.id});msg(ok?'Запрос опубликован.':'Доставка не подтверждена. Если сообщение уже есть, повторно оно не отправляется.');await show();}catch(x){msg(x.message,true);}}},'Проверить / повторить публикацию'));
     panel.append(card);
    }
   }
@@ -56,16 +73,16 @@ export function createControlUI({element:e,render,call,state,T,home,msg}){
   const take=e('button',{disabled:true,onclick:()=>{
    if(shots.length>=10||sending||opening)return;
    try{
-    let canvas=capturePortrait(video,1200),data=canvas.toDataURL('image/jpeg',0.78);
+    let canvas=captureFrame(video,1200),data=canvas.toDataURL('image/jpeg',0.78);
     // Bound total request size, retaining the largest available portrait resolution.
-    for(const h of [960,800,640]){if(data.length*3/4<=100000)break;canvas=capturePortrait(video,h);data=canvas.toDataURL('image/jpeg',0.7);}
+    for(const h of [960,800,640]){if(data.length*3/4<=100000)break;canvas=captureFrame(video,h);data=canvas.toDataURL('image/jpeg',0.7);}
     if(data.length*3/4>100000)throw new Error('Снимок слишком большой. Повторите с более близкого расстояния.');
     shots.push(data);refresh();info.textContent='Снимок добавлен. Можно снять ещё или переключить камеру.';
    }catch(x){info.textContent=x.message;}
   }},'Сделать снимок');
   const send=e('button',{disabled:true,onclick:async()=>{
    if(sending||!shots.length)return;sending=true;stop();refresh();change.disabled=true;take.disabled=true;comment.disabled=true;info.textContent='Отправляем фото и комментарий в рабочую группу…';
-   try{const r=await call('completeControl',{submissionId:intent.submissionId,photos:shots.map(p=>p.split(',')[1]),comment:comment.value.trim()});shots=[];await show();msg(`Контроль отправлен: ${r.photoCount} фото${r.late?' · с опозданием':''}.`);}
+   try{const r=await call('completeControl',{submissionId:intent.submissionId,revision:intent.revision,photos:shots.map(p=>p.split(',')[1]),comment:comment.value.trim()});shots=[];await show();msg(`Контроль отправлен: ${r.photoCount} фото${r.late?' · с опозданием':''}.`);}
    catch(x){sending=false;comment.disabled=false;refresh();info.textContent=x.message+' Для повторной отправки используйте те же снимки; при неизвестной доставке сначала проверьте группу.';}
   }},'Отправить контроль в группу');
   function refresh(){

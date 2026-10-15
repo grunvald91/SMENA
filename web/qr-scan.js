@@ -29,3 +29,21 @@ export function startTelegramQrScan(telegram,botUsername,{onToken,onInvalid,onCl
   });
  }catch(e){closed();throw e;}
 }
+
+export function startPairingQrScan(telegram,{onCode,onInvalid,onClose}){
+ if(!telegram?.showScanQrPopup||!telegram.isVersionAtLeast?.('6.4'))
+  throw new Error('Сканер недоступен в Telegram. Обновите приложение или используйте вставку кода.');
+ let active=true,consumed=false;
+ const closed=()=>{if(!active)return;active=false;telegram.offEvent?.('scanQrPopupClosed',closed);onClose?.();};
+ telegram.onEvent?.('scanQrPopupClosed',closed);
+ try{
+  telegram.showScanQrPopup({text:'Наведите камеру на код подключения рабочего экрана'},value=>{
+   if(!active||consumed)return true;
+   if(typeof value!=='string'||!/^pk1_[A-Za-z0-9_-]{87}$/.test(value.trim())){
+    onInvalid?.();return false;
+   }
+   consumed=true;closed();
+   Promise.resolve().then(()=>onCode(value.trim()));return true;
+  });
+ }catch(e){closed();throw e;}
+}

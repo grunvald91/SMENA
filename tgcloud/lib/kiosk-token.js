@@ -16,6 +16,18 @@ export function parsePairingCode(code){
  const bytes=decodeUrl(code.slice(4));requireInput(bytes.length===65&&bytes[0]===4,'BAD_DEVICE_KEY','Некорректный ключ');
  return {kty:'EC',crv:'P-256',x:encodeUrl(bytes.slice(1,33)),y:encodeUrl(bytes.slice(33))};
 }
+export function kioskDeviceIdFromPublicKey(jwk){
+ // Reserved range: first 48 bits of the random P-256 x coordinate, with
+ // the 2^50 prefix. Identity is stable without a return channel to the kiosk.
+ const x=decodeUrl(jwk?.x||''),y=decodeUrl(jwk?.y||'');
+ requireInput(x.length===32&&y.length===32,'BAD_DEVICE_KEY','Некорректный публичный ключ');
+ let suffix=0;
+ for(let i=0;i<6;i++)suffix=suffix*256+x[i];
+ const id=2**50+suffix;
+ requireInput(Number.isSafeInteger(id),'BAD_DEVICE_KEY','Недопустимый ID устройства');
+ return id;
+}
+
 export function kioskPayload(deviceId,issuedAt,nonce){
  requireInput(Number.isSafeInteger(deviceId)&&deviceId>0&&Number.isInteger(issuedAt)&&issuedAt>0&&issuedAt<4294967296&&nonce?.length===12,'BAD_QR','Некорректные данные QR');
  const bytes=new Uint8Array(25),view=new DataView(bytes.buffer);bytes[0]=1;

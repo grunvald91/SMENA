@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
-command -v node >/dev/null || { echo "Node.js 18+ необходим"; exit 1; }
-node -e 'if (Number(process.versions.node.split(".")[0]) < 18) process.exit(1)' || { echo "Требуется Node.js >=18"; exit 1; }
+command -v node >/dev/null || { echo "Требуется Node.js 20.19+ или 22.12+"; exit 1; }
+node -e 'const [maj,min]=process.versions.node.split(".").map(Number);if(!((maj===20&&min>=19)||(maj===22&&min>=12)||maj>22))process.exit(1)' || { echo "Vite 7 требует Node.js 20.19+ или 22.12+"; exit 1; }
 for exe in vite tgcloud; do
   if [[ ! -x "./node_modules/.bin/$exe" ]]; then
     echo "Не найден $exe. В GitHub Codespaces выполните: npm install --no-audit --no-fund"
@@ -11,15 +11,28 @@ for exe in vite tgcloud; do
   fi
 done
 
-echo "Проверка синтаксиса всех серверных модулей..."
+echo "Проверка синтаксиса всех серверных модулей, Mini App, kiosk, endpoints и тестов..."
 while IFS= read -r -d '' file; do node --check "$file"; done < <(find tgcloud -name '*.js' -type f -print0)
-node --check web/main.js
+while IFS= read -r -d '' file; do node --check "$file"; done < <(find web kiosk tests -name '*.js' -type f -print0)
+node --check vite.kiosk.config.js
 echo "Проверка доменных тестов..."
 npm run check
 
+echo "Локальная симуляция безопасной миграции SQLite и восстановления..."
+if command -v python3 >/dev/null; then
+  python3 scripts/check_additive_org_migration.py
+  node scripts/check_shift_migration.mjs
+else
+  echo "Не найден Python 3 для проверки миграции"; exit 4
+fi
 echo "Сборка Mini App..."
 npm run build
 if [[ ! -s dist/index.html ]]; then
   echo "Сборка отсутствует: dist/index.html"; exit 3
 fi
-echo "PRE-FLIGHT OK. Telegram-бот и база данных не изменены."
+echo "Сборка рабочего QR-экрана (отдельный сайт smena.servgo.ru)..."
+npm run build:kiosk
+if [[ ! -s kiosk-dist/index.html ]]; then
+  echo "Сборка отсутствует: kiosk-dist/index.html"; exit 5
+fi
+echo "OFFLINE PRE-FLIGHT OK. Серверная платформа, реальная БД и production не изменены."

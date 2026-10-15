@@ -10,3 +10,12 @@ export function capturePortrait(video,maxHeight=1200){
  canvas.getContext('2d').drawImage(video,p.x,p.y,p.cropWidth,p.cropHeight,0,0,p.width,p.height);
  return canvas;
 }
+
+export function fullFrameSize(width,height,maxDimension=1200){
+ if(!Number.isFinite(width)||!Number.isFinite(height)||width<=0||height<=0)throw new Error('Видеопоток не готов');
+ const ratio=Math.min(1,maxDimension/Math.max(width,height));return {width:Math.max(1,Math.round(width*ratio)),height:Math.max(1,Math.round(height*ratio))};
+}
+export function captureFrame(video,maxDimension=1200){
+ const size=fullFrameSize(video.videoWidth,video.videoHeight,maxDimension),canvas=document.createElement('canvas');canvas.width=size.width;canvas.height=size.height;
+ canvas.getContext('2d').drawImage(video,0,0,video.videoWidth,video.videoHeight,0,0,size.width,size.height);return canvas;
+}

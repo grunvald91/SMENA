@@ -16,7 +16,7 @@ export function reportRange(period){
 export function formatReport(r){
  const lines=['📊 Отчёт по сменам',reportRange(r.period),''];
  for(const e of r.entries){
-  lines.push(`${e.name}: ${e.hours} ч · ${rubles(e.grossKopeks)}${e.bonusKopeks?' (надбавки '+rubles(e.bonusKopeks)+')':''}${e.unclosed?' · ⚠️ незакрытых смен: '+e.unclosed:''}`);
+  lines.push(`${e.name}: ${e.hours} ч · ${rubles(e.grossKopeks)}${e.bonusKopeks?' (надбавки '+rubles(e.bonusKopeks)+')':''}${e.salesKopeks?' (продажи '+rubles(e.salesKopeks)+')':''}${e.unclosed?' · ⚠️ незакрытых смен: '+e.unclosed:''}`);
  }
  if(r.exceptions?.length){
   lines.push('','Отклонения от графика:');

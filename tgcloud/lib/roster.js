@@ -29,20 +29,27 @@ export function templateWindow(workDate,template,timezone){
  return {startAt:toUtc(workDate,start),endAt:toUtc(addDays(workDate,end<=start?1:0),end)};
 }
 
-/** Only employee-specific assignments may resolve a check-in when multiple templates exist. */
-export function chooseAssignment(scannedAt,timezone,assignments,templates){
+// Ongoing interval outranks an early arrival for a future shift.
+function logicalCandidate(scannedAt,candidates){
+ const ranked=candidates.map(c=>({...c,rank:scannedAt>=c.startAt&&scannedAt<c.endAt?0:scannedAt<c.startAt?1:2}))
+  .filter(c=>c.rank===0 || (c.rank===1&&c.startAt-scannedAt<=3*3600) || (c.rank===2&&scannedAt-c.endAt<=3600))
+  .sort((a,b)=>a.rank-b.rank||Math.abs(a.startAt-scannedAt)-Math.abs(b.startAt-scannedAt)||a.templateId-b.templateId);
+ return ranked[0]||null;
+}
+export function chooseAssignment(scannedAt,timezone,assignments,templates,usedIds=[]){
  const byId=new Map(templates.map(t=>[t.id,t]));
- const candidates=assignments.filter(a=>byId.has(a.templateId)).map(a=>{
-  const template=byId.get(a.templateId);
-  const w=templateWindow(a.workDate,template,timezone);
-  return {...w,assignmentId:a.id,templateId:template.id,templateName:template.name,graceMinutes:template.graceMinutes??5,
-   differenceSeconds:scannedAt-w.startAt};
- }).filter(c=>c.differenceSeconds >= -3*3600 && c.differenceSeconds<=8*3600)
-   .sort((a,b)=>Math.abs(a.differenceSeconds)-Math.abs(b.differenceSeconds));
- if(!candidates.length)return null;
- if(candidates.length>1 && Math.abs(Math.abs(candidates[0].differenceSeconds)-Math.abs(candidates[1].differenceSeconds))<60)
-  requireInput(false,'AMBIGUOUS_SHIFT','Две смены близки по времени; уточните назначение у руководителя');
- return candidates[0];
+ const candidates=assignments.filter(a=>byId.has(a.templateId)&&!usedIds.includes(a.id)).map(a=>{
+  const current=byId.get(a.templateId),t=a.planSnapshot?.template||current,w=a.planSnapshot?.window||templateWindow(a.workDate,t,timezone);
+  return {...w,assignmentId:a.id,templateId:t.id,templateName:t.name,graceMinutes:t.graceMinutes??5,workDate:a.workDate};
+ });
+ return logicalCandidate(scannedAt,candidates);
+}
+export function chooseAutomatic(scannedAt,timezone,templates,usedKeys=[]){
+ const candidates=daysAround(scannedAt,timezone).flatMap(workDate=>templates.map(t=>{
+  const w=templateWindow(workDate,t,timezone),key=`${t.id}:${workDate}`;
+  return {...w,assignmentId:null,templateId:t.id,templateName:t.name,graceMinutes:t.graceMinutes??5,workDate,key};
+ })).filter(c=>!usedKeys.includes(c.key));
+ return logicalCandidate(scannedAt,candidates);
 }
 export function daysAround(seconds,timezone){
  const today=formatDate(seconds*1000,timezone);

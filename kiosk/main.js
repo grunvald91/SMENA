@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import {pairingCode,kioskPayload,kioskMessage,signedKioskToken} from '../tgcloud/lib/kiosk-token.js';
+import {pairingCode,kioskDeviceIdFromPublicKey,kioskPayload,kioskMessage,signedKioskToken} from '../tgcloud/lib/kiosk-token.js';
 import './style.css';
 const root=document.querySelector('#root');
 let device=null,timer=null,clock=null;
@@ -12,14 +12,36 @@ async function readDevice(){const database=await db();return new Promise((resolv
 async function saveDevice(record){const database=await db();return new Promise((resolve,reject)=>{const tx=database.transaction('device','readwrite');tx.objectStore('device').put(record,'current');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
 async function copyCode(code,status){try{await navigator.clipboard.writeText(code);status.textContent='Код скопирован.';}catch{status.textContent='Выделите и скопируйте код вручную.';}}
 function registration(){
- const code=pairingCode(device.publicJwk),area=el('textarea',code,{readonly:'',rows:3,'aria-label':'Код регистрации рабочего устройства'}),status=el('p','',{class:'muted'});
- const id=el('input','',{type:'number',min:'1',placeholder:'ID устройства от владельца','aria-label':'ID рабочего устройства'});
- const name=el('input','',{maxlength:'80',placeholder:'Название точки на экране','aria-label':'Название рабочей точки'});
- render(panel('Подключить рабочий экран',el('p','1. Владелец открывает бота @servgo_smena_bot → «Открыть Смену» и выбирает рабочую точку.'),el('p','2. Передайте владельцу этот код. В приложении он вставит его в «Привязать рабочий экран».'),area,
-  el('button','Скопировать код',{onclick:()=>copyCode(code,status)}),status,
-  el('p','3. Введите полученный ID устройства. Название используется только на этом экране.'),id,name,
-  el('button','Показать QR',{onclick:async()=>{try{const value=Number(id.value);if(!Number.isSafeInteger(value)||value<1)throw new Error('Введите ID устройства, полученный после регистрации.');device.id=value;device.name=name.value.trim()||'Рабочая точка';await saveDevice(device);await display();}catch(e){fail(e);}}}),
-  el('p','Ключ хранится в этом браузере. Используйте постоянный профиль, не приватный режим. Не очищайте данные сайта.',{class:'muted'})));
+ const code=pairingCode(device.publicJwk);
+ if(!device.id)device.id=kioskDeviceIdFromPublicKey(device.publicJwk);
+ const qr=el('canvas','',{'aria-label':'QR для подключения рабочего экрана'});
+ const area=el('textarea',code,{readonly:'',rows:3,'aria-label':'Код подключения рабочего экрана'});
+ const status=el('p','',{class:'muted'});
+ const backup=el('details');
+ backup.append(el('summary','Если QR не сканируется: скопировать код'),area,
+  el('button','Скопировать код',{onclick:()=>copyCode(code,status)}),status);
+ const legacyId=el('input','',{type:'number',min:'1',placeholder:'Ранее выданный ID','aria-label':'Старый ID устройства'});
+ const legacy=el('details');
+ legacy.append(el('summary','Ранее подключали по старой схеме?'),
+  el('p','Если это устройство уже было подтверждено в Telegram, введите ранее выданный ID. В остальных случаях ничего вводить не нужно.'),
+  legacyId,el('button','Применить старый ID',{class:'secondary',onclick:async()=>{
+   try{
+    const value=Number(legacyId.value);
+    if(!Number.isSafeInteger(value)||value<=0)throw new Error('Неверный ID');
+    device.id=value;device.status='ready';
+    await saveDevice(device);await display();
+   }catch(e){fail(e);}
+  }}));
+ render(panel('Подключить рабочий экран',
+  el('p','Владелец открывает ServGo Смена в Telegram и сканирует этот код своим телефоном. Камера на рабочем компьютере не нужна.'),
+  qr,el('p','Выберите точку в Telegram и подтвердите привязку.',{class:'instruction'}),
+  el('button','Владелец подтвердил — показать QR',{onclick:async()=>{
+   try{device.status='ready';await saveDevice(device);await display();}catch(e){fail(e);}
+  }}),
+  backup,legacy,
+  el('p','Ключ хранится только в этом браузере. Не очищайте данные сайта. Включите автоматическую настройку времени.',{class:'muted'})));
+ QRCode.toCanvas(qr,code,{width:330,margin:3,errorCorrectionLevel:'M'}).catch(fail);
+ saveDevice(device).catch(fail);
 }
 async function sign(kind='qr'){
  const payload=kioskPayload(device.id,Math.floor(Date.now()/1000),crypto.getRandomValues(new Uint8Array(12)));
@@ -40,7 +62,7 @@ async function display(){
  title.setAttribute('class','location');
  const options=el('details'),summary=el('summary','Настройки экрана');options.append(summary,
   el('p',`Устройство №${device.id}. Если отметка сообщает о неверном времени, включите автоматическую настройку часов на рабочем устройстве.`),
-  el('button','Изменить ID / название',{class:'secondary',onclick:registration}),
+  el('button','Настройки и регистрация',{class:'secondary',onclick:registration}),
   el('button','Отвязать устройство',{class:'secondary',onclick:()=>revoke().catch(fail)}));card.append(options);render(card);
  let expires=0;
  async function tick(){if(!canvas.isConnected)return;try{
@@ -54,9 +76,9 @@ async function display(){
 async function start(){
  if(!window.isSecureContext||!crypto?.subtle||!indexedDB)throw new Error('Для рабочего QR нужен HTTPS и браузер с WebCrypto и IndexedDB.');
  device=await readDevice();
- if(device?.id)return display();if(device)return registration();
+ if(device?.id&&device.status!=='pending')return display();if(device)return registration();
  render(panel('QR рабочего места',el('p','Этот экран остаётся на планшете, компьютере или телефоне в рабочей точке. Сотрудники сканируют QR своими телефонами.'),
-  el('button','Настроить это устройство',{onclick:async()=>{try{const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);device={privateKey:keys.privateKey,publicJwk:await crypto.subtle.exportKey('jwk',keys.publicKey)};await saveDevice(device);registration();}catch(e){fail(e);}}}),
+  el('button','Настроить это устройство',{onclick:async()=>{try{const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);device={privateKey:keys.privateKey,publicJwk:await crypto.subtle.exportKey('jwk',keys.publicKey),status:'pending'};await saveDevice(device);registration();}catch(e){fail(e);}}}),
   el('p','Однократную привязку подтверждает владелец в Telegram. Включите автоматическое время и используйте постоянный профиль браузера.',{class:'muted'})));
 }
 start().catch(e=>render(panel('Экран пока недоступен',el('p',e.message,{class:'error'}))));

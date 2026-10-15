@@ -41,7 +41,7 @@ export function startOfLocalDay(s,tz) {
 export function reportPeriod(args=[],nowMs=Date.now(),tz='Europe/Moscow') {
   const today=formatDate(nowMs,tz);
   let start, end;
-  if (args.length===0) { start=today.slice(0,7)+'-01'; end=today; }
+  if (args.length===0) { start=today.slice(0,7)+'-01'; end=addDays(today,1); }
   else if(args.length===1 && /^\d{4}-\d{2}$/.test(args[0])) {
     start=args[0]+'-01'; parseISODate(start);
     const [y,m]=args[0].split('-').map(Number);

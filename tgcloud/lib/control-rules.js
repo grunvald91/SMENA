@@ -20,7 +20,7 @@ export function controlPhotos(photos){
  requireInput(bytes.reduce((n,p)=>n+p.length,0)<=1000000,'BAD_PHOTOS','Серия слишком большая — уменьшите количество фотографий');return bytes;
 }
 export function controlStatus(request,submission,now){
- if(submission?.status==='done')return submission.completedAt>request.deadlineAt?'Получено с опозданием':'Получено вовремя';
+ if(submission?.status==='done')return submission.completedAt>request.deadlineAt?'Получено с опозданием · ждёт приёмки':'Получено · ждёт приёмки';
  if(submission?.status==='uploading'||submission?.status==='uncertain')return 'Проверьте доставку в группе';
  return now>request.deadlineAt?'Просрочено — ожидается ответ':'Ожидается ответ';
 }

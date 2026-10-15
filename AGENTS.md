@@ -1,6 +1,6 @@
 # Instructions for AI coding agents — ServGo Смена
 
-1. Application name is ServGo Смена, repository `grunvald91/servgo-shifts`, separate from `booking_bot` and `Ai_growth_os`.
+1. Application name is ServGo Смена, repository `grunvald91/SMENA`, separate from `booking_bot` and `Ai_growth_os`.
 2. All deployed JavaScript modules are in `tgcloud/`; handlers/endpoints flat; shared code in `tgcloud/lib/`, imports local relative with `.js`; use `sdk` and `sdk/db` only in deployed modules. Never add Node imports to Telegram runtime.
 3. Keep all authorization inside service functions, not only UI. Ownership is verified from authenticated Telegram ID. Never trust user/employee ID or salary from a client request.
 4. QR issuance must fail closed when WebCrypto or signature verification is unavailable. NEVER replace with unverified cookies, browser fingerprint, static QR or shared group password.
@@ -12,3 +12,21 @@
 10. Tests: `npm run check`, plus platform `tgcloud run`, `tgcloud migrate --dry-run` when connected. No automatic deployments.
 11. AI interface: use typed commands in `tgcloud/lib/service.js`, tenant isolation and an explicit approval step for payroll and corrections. See `docs/AI_INTERFACE.md`.
 12. Important: browser key stored in IndexedDB cannot prove physical location or block active QR relay. Don't claim otherwise.
+
+13. P1: organization_memberships is additive. Never remove owner_tg_id UNIQUE without a verified migration and backup. listMyOrganizations is read-only; do not trust any orgId from a client. Existing owner-only functions must remain until fully tenant-scoped and tested (docs/BASELINE_AND_P1.md).
+
+## P1: Tenant selection and backward compatibility
+
+13. `organization_memberships` is additive; legacy owner (`organizations.owner_tg_id`) remains authoritative and cannot be demoted by a membership row.
+14. `user_organization_selections` is a **preference only**, not proof of permissions. Every access must re-check active memberships and legacy ownership on the server. If more than one organization is available and none is explicitly selected, NEVER choose the first automatically.
+15. A selected organization is NOT YET consumed by legacy owner-only commands. Do not expose an operational org switcher in Mini App or Telegram menu until the command/endpoint authorization context is migrated end to end. Managers and employees may select their own organization without receiving payroll or roles permissions.
+16. `organizations.owner_tg_id UNIQUE` must NOT be removed in this PR. A separate reviewed migration with verified backup/restore is mandatory before true multi-business ownership.
+17. Any new Telegram action touching an organization requires an explicit server-side organization scope and RBAC. Do not derive business access from group membership, chat titles, display name, or a client-supplied ID alone.
+
+13. Current onboarding stage in draft PR #8: reply-keyboard and Telegram chat_shared with server-side request_id verification. Legacy owner-only mutators are NOT multi-business-ready. Do not enable cross-business selection for payroll/actions before every path is audited and migrated.
+14. The workstation kiosk at smena.servgo.ru does not have or require a camera. Telegram Serverless must not call the ServGo VPS directly.
+15. New onboarding_sessions table is additive only; rehearse migration/backups before deploy. Keep legacy commands as fallback.
+
+17. Draft PR #8 extends kiosk pairing: new external kiosks derive a stable safe integer ID from the P-256 public key, accepted only after owner Telegram approval. Working kiosk has NO camera. Recheck signature verification and preserve old devices.
+18. Employee self-join is approved ONLY by the legacy owner of selected business; the owner must explicitly enter hourly rate. Never automatically assign a zero-hourly rate or expose pay details in group chats. Invite tokens expire, join requests are scoped, repeated approvals must fail safely.
+19. New additive employee invite tables require full tgcloud dry-run, checked backup/restore and real phone smoke tests before production. The current PR is not deployed.

@@ -1,9 +1,14 @@
 import { api } from 'sdk';
 import { DomainError } from '../lib/errors.js';
-import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,setLocationHours,createShiftTemplate,assignShift } from '../lib/service.js';
+import { setup,bindChat,addEmployee,changeRate,setShiftBonus,createBonus,listEmployees,listLocations,makeReport,findProblems,formatReport,requireOwner,ownerOrg,setLocationHours,createShiftTemplate,assignShift } from '../lib/service.js';
 import { rubles } from '../lib/payroll.js';
 import {reportDate,reportMoment} from '../lib/report-format.js';
 import {EMPLOYEE_HELP,parseEmployeeCommand} from '../lib/employee-command.js';
+import {describeOrganizationSelection} from '../lib/organization-selection-service.js';
+import {legacyOwnerForSelection} from '../lib/scoped-owner.js';
+import {createEmployeeInvite,pendingEmployeeRequests,rejectEmployeeRequest} from '../lib/employee-invitations.js';
+import {ONBOARDING_BUTTONS as OB,mainKeyboard,cancelKeyboard,groupPickerKeyboard,organizationPickerKeyboard,employeeApprovalKeyboard,parseEmployeeApprovalChoice} from '../lib/onboarding-ui.js';
+import {getOnboardingSession,beginBusinessOnboarding,finishBusinessOnboarding,beginGroupOnboarding,finishGroupOnboarding,cancelOnboarding,beginBusinessSwitch,finishBusinessSwitch,beginEmployeeJoinByLink,finishEmployeeJoinName,beginEmployeeApproval,finishEmployeeApproval} from '../lib/onboarding-service.js';
 function money(input){
  if(!/^\d{1,7}(?:[.,]\d{1,2})?$/.test(input||'')) throw new DomainError('BAD_MONEY','Сумма: 250 или 250.50');
  const [a,b='']=input.replace(',','.').split('.');return Number(a)*100+Number(b.padEnd(2,'0'));
@@ -29,21 +34,122 @@ EMPLOYEE_HELP,
 'В рабочей группе: /bind Название точки — владелец привязывает группу; /id — показать свой TG ID.',
 'Приход/уход: QR → фронтальная камера → отправка фотографии ботом в рабочую группу. Для Mini App включите Main Mini App в @BotFather.','',
 'Зарплатный отчёт — предварительный, не юридическая платёжная ведомость.'].join('\n');
-async function reply(chatId,message) {
+async function reply(chatId,message,markup=null) {
  const parts=[];let chunk='';
  for (const line of message.split('\n')) {
   if((chunk+'\n'+line).length>3700){if(chunk)parts.push(chunk);chunk='';}
   chunk+=(chunk?'\n':'')+line;
  }
  if(chunk)parts.push(chunk);
- for(const part of parts)await api.sendMessage({chat_id:chatId,text:part});
+ for(let i=0;i<parts.length;i++)await api.sendMessage({chat_id:chatId,text:parts[i],...(markup&&i===parts.length-1?{reply_markup:markup}:{})});
 }
+async function sendOnboardingMenu(tgId,chat) {
+ const [legacy,state]=await Promise.all([ownerOrg(tgId),describeOrganizationSelection(tgId)]);
+ if(state.selectionRequired){
+  const available=await beginBusinessSwitch(tgId);
+  await reply(chat,'У вас несколько организаций. Выберите, с какой будем работать.',organizationPickerKeyboard(available));return;
+ }
+ const selected=state.selectedOrganization;
+ const canManage=!!legacyOwnerForSelection(legacy,state);
+ const hello=selected?`🏢 ${selected.name}\nВыберите действие:`:'Добро пожаловать в ServGo Смена! Создадим ваш бизнес.';
+ await reply(chat,hello,mainKeyboard(canManage,{hasMembership:state.organizations.length>0,canCreate:!legacy}));
+}
+
 export default async function(message){
  if(!message?.from?.id||message.from.is_bot||!message.chat?.id) return;
  const cmd=parse(message),tgId=message.from.id,chat=message.chat.id,privateChat=message.chat.type==='private';
- if(!cmd) return;
  try {
-  if(cmd.cmd==='start'||cmd.cmd==='help'){await reply(chat,HELP);return;}
+  if(privateChat&&cmd?.cmd==='start'&&/^join_[A-Za-z0-9_-]{22}$/.test(cmd.args)){
+   const invite=await beginEmployeeJoinByLink(tgId,cmd.args.slice(5));
+   if(invite.kind==='name')await reply(chat,`Подключаем вас к «${invite.organization}». Напишите своё имя и фамилию.`,cancelKeyboard());
+   else if(invite.kind==='pending')await reply(chat,`Ваша заявка в «${invite.organization}» уже ожидает подтверждения владельцем.`);
+   else await reply(chat,`Вы уже подключены к «${invite.organization}».`);
+   return;
+  }
+  if(privateChat&&message.chat_shared){
+   const linked=await finishGroupOnboarding(tgId,message.chat_shared);
+   await reply(chat,`✅ Рабочая группа подключена: «${linked.name}». Теперь можно добавлять сотрудников и настраивать QR-экран.`);
+   await sendOnboardingMenu(tgId,chat);return;
+  }
+  if(privateChat){
+   const plain=(message.text||'').trim();
+   if(plain===OB.cancel){await cancelOnboarding(tgId);await sendOnboardingMenu(tgId,chat);return;}
+   if(plain===OB.businesses){
+    const organizations=await beginBusinessSwitch(tgId);
+    await reply(chat,'Выберите бизнес:',organizationPickerKeyboard(organizations));return;
+   }
+   if(plain.startsWith('🏬 ')){
+    const chosen=await finishBusinessSwitch(tgId,plain);
+    await reply(chat,`✅ Выбрано: ${chosen.name}`);
+    await sendOnboardingMenu(tgId,chat);return;
+   }
+   if(plain===OB.create){
+    await beginBusinessOnboarding(tgId);
+    await reply(chat,'Как назовём ваш бизнес? Напишите название одним сообщением.',cancelKeyboard());return;
+   }
+   if(plain===OB.group){
+    const {requestId}=await beginGroupOnboarding(tgId);
+    await reply(chat,'Добавьте бота в рабочую группу, если его там ещё нет. Затем нажмите кнопку ниже и выберите группу. Подключить её может администратор.',groupPickerKeyboard(requestId));return;
+   }
+   if(plain===OB.invite){
+    const invite=await createEmployeeInvite(tgId);
+    await reply(chat,`🔗 Приглашение в «${invite.organization}»:\n${invite.url}\n\nОтправьте эту ссылку сотрудникам. Она действует 14 дней. Каждый сам напишет своё имя, а вы подтвердите заявку.`,mainKeyboard(true,{hasMembership:true}));return;
+   }
+   if(plain===OB.requests){
+    const requests=await pendingEmployeeRequests(tgId);
+    if(!requests.length)await reply(chat,'Новых заявок сотрудников пока нет.',mainKeyboard(true,{hasMembership:true}));
+    else await reply(chat,'Заявки на подключение:\n'+requests.map(r=>`№${r.id}. ${r.name}`).join('\n')+'\nВыберите действие:',employeeApprovalKeyboard(requests));
+    return;
+   }
+   const approval=parseEmployeeApprovalChoice(plain);
+   if(approval){
+    if(approval.approve){
+     const person=await beginEmployeeApproval(tgId,approval.requestId);
+     await reply(chat,`Вы подтверждаете ${person.name} для «${person.organization}». Укажите часовую ставку в рублях (например 350; для неоплачиваемой работы — 0).`,cancelKeyboard());
+    }else{
+     await rejectEmployeeRequest(tgId,approval.requestId);
+     await reply(chat,'Заявка отклонена.');await sendOnboardingMenu(tgId,chat);
+    }
+    return;
+   }
+   if(plain===OB.team){
+    const staff=await listEmployees(tgId);
+    await reply(chat,staff.length?staff.map(x=>`${x.name} — ${rubles(x.hourlyKopeks)}/ч`).join('\n'):'Сотрудников пока нет. Для добавления откройте кабинет Смены.',mainKeyboard(true));return;
+   }
+   if(plain===OB.report){await reply(chat,formatReport(await makeReport(tgId,[])),mainKeyboard(true));return;}
+   if(plain===OB.dashboard){
+    await reply(chat,'Откройте ServGo Смена. Ваши функции зависят от роли в выбранной организации.',{
+     inline_keyboard:[[{text:'📱 Открыть Смену',web_app:{url:'https://app8926504673.tgcloud.ai/'}}]]
+    });return;
+   }
+   if(!cmd&&plain){
+    const session=await getOnboardingSession(tgId);
+    if(session?.phase==='employee_name'){
+     const res=await finishEmployeeJoinName(tgId,plain);
+     await reply(chat,`✅ Заявка в «${res.organization}» отправлена. Владелец подтвердит подключение.`);
+     if(res.ownerTgId){
+      try{await api.sendMessage({chat_id:res.ownerTgId,text:`📥 Новая заявка: ${res.name}. Откройте ServGo Смена → «Заявки сотрудников».`});}
+      catch(e){console.warn('Owner invite notification not delivered');}
+     }
+     return;
+    }
+    if(session?.phase==='employee_rate'){
+     const result=await finishEmployeeApproval(tgId,money(plain));
+     await reply(chat,`✅ ${result.name} подключён к «${result.organization}».`);
+     try{await api.sendMessage({chat_id:result.userTgId,text:`✅ Вашу заявку в «${result.organization}» подтвердили. Теперь можете отмечать смены через QR на рабочей точке.`});}
+     catch(e){console.warn('Employee invite confirmation not delivered');}
+     await sendOnboardingMenu(tgId,chat);return;
+    }
+    if(session?.phase==='business_name'){
+     const org=await finishBusinessOnboarding(tgId,plain);
+     await reply(chat,`✅ Бизнес «${org.name}» создан.`);
+     await sendOnboardingMenu(tgId,chat);return;
+    }
+   }
+  }
+  if(!cmd)return;
+  if(cmd.cmd==='start'){if(privateChat)await sendOnboardingMenu(tgId,chat);else await reply(chat,'Откройте бота в личном чате, чтобы настроить Смену.');return;}
+  if(cmd.cmd==='help'){await reply(chat,HELP,privateChat?mainKeyboard(!!(await ownerOrg(tgId))):null);return;}
   if(cmd.cmd==='id'){await reply(chat,`Telegram ID: ${tgId}`);return;}
   if(cmd.cmd==='bind'){
    if(privateChat)throw new DomainError('GROUP_REQUIRED','Добавьте бота в рабочую группу и используйте /bind там');
@@ -59,7 +165,7 @@ export default async function(message){
    return;
   }
   if(cmd.cmd==='setup'){
-   const org=await setup(tgId,cmd.args);await reply(chat,`✅ Организация «${org.name}» создана. Добавьте бота в рабочую группу и вызовите /bind.`);return;
+   const org=await setup(tgId,cmd.args);await reply(chat,`✅ Организация «${org.name}» создана.`);await sendOnboardingMenu(tgId,chat);return;
   }
   if(cmd.cmd==='employee'){
    const input=parseEmployeeCommand(cmd.args);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {pairingCode,parsePairingCode,kioskPayload,kioskMessage,signedKioskToken,parseKioskToken,isShiftToken,decodeUrl,encodeUrl} from '../tgcloud/lib/kiosk-token.js';
+import {pairingCode,parsePairingCode,kioskDeviceIdFromPublicKey,kioskPayload,kioskMessage,signedKioskToken,parseKioskToken,isShiftToken,decodeUrl,encodeUrl} from '../tgcloud/lib/kiosk-token.js';
 import {verifyDeviceSignature} from '../tgcloud/lib/security.js';
 import {shiftPhotoCaption} from '../tgcloud/lib/shift-caption.js';
 async function fixture(){const pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);return {pair,jwk:await crypto.subtle.exportKey('jwk',pair.publicKey)};}
@@ -36,4 +36,15 @@ test('photo captions show server attendance time, confirmation and work duration
  const caption=shiftPhotoCaption({action:'out',employee:'Иван',location:'Точка',templateName:'Утренняя',eventAt:Date.parse('2026-10-10T08:45:30Z')/1000,confirmed:true,shiftId:42,durationSeconds:21660});
  assert.match(caption,/✅ Уход/);assert.match(caption,/10.10.2026.*11:45:30/);assert.match(caption,/GMT\+3/);assert.match(caption,/6 ч 1 мин/);assert.doesNotMatch(caption,/ставка|₽|причина|смена #|ServGo|подтверждена|Утренняя/i);
  assert.match(shiftPhotoCaption({action:'in',employee:'Иван',location:'Точка',eventAt:1791633600}),/ещё не подтверждена/);
+});
+
+test('camera-free kiosk derives stable safe ID and uses it in signed QR',async()=>{
+ const {pair,jwk}=await fixture(),id=kioskDeviceIdFromPublicKey(jwk);
+ assert.ok(Number.isSafeInteger(id)&&id>=2**50&&id<2**50+2**48);
+ assert.equal(kioskDeviceIdFromPublicKey(parsePairingCode(pairingCode(jwk))),id);
+ assert.notEqual(kioskDeviceIdFromPublicKey((await fixture()).jwk),id);
+ const stamp=1791633600,value=await token(pair,id,stamp),parsed=parseKioskToken(value,stamp+1);
+ assert.equal(parsed.deviceId,id);
+ assert.equal(await verifyDeviceSignature(jwk,kioskMessage(parsed.payload),parsed.signature),true);
+ assert.throws(()=>kioskDeviceIdFromPublicKey({x:'AAA',y:'AAA'}));
 });
