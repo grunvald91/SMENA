@@ -1,0 +1,13 @@
+# Рискованные пути. Владелец автоматически назначается ревьюером.
+# Не включай "Require review from Code Owners": автор PR не может одобрить свой же PR,
+# и работа заблокируется. Здесь CODEOWNERS нужен как карта рисков и автоназначение.
+*                        @grunvald91
+/tgcloud/schema.js       @grunvald91
+/tgcloud/lib/security.js @grunvald91
+/tgcloud/lib/service.js  @grunvald91
+/tgcloud/lib/control.js  @grunvald91
+/tgcloud/lib/kiosk-token.js @grunvald91
+/tgcloud/lib/payroll.js  @grunvald91
+/kiosk/                  @grunvald91
+/scripts/                @grunvald91
+/tgcloud.json            @grunvald91
