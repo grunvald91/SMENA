@@ -8,7 +8,8 @@
 6. One open shift per employee enforced at DB unique index. Closed shifts immutable by default. Preserve audit log. Owner edits should be implemented as approved corrections, not overwrites.
 7. Salary is preview only: integer kopeks, hourly snapshots per shift, no gross-to-net promises, no undocumented payroll deductions. Unknown shifts require human review.
 8. Separate private salary responses from public group messages. Do not log photographs, full Telegram IDs, key materials or private employee information.
-9. User explicitly does not want a scheduler, automatic reminders or GitHub Actions. Reports are invoked manually. Deploy only after secrets, data-localization, SDK and end-to-end testing.
+9. User explicitly does not want a scheduler or automatic reminders. Reports are invoked manually. Deploy only after secrets, data-localization, SDK and end-to-end testing.
+   GitHub Actions are allowed: the repository is public, so standard-runner minutes are free and unlimited (checks, builds, manual `workflow_dispatch` jobs). Logs are public: never print secrets, `TGCLOUD_TOKEN`, Telegram IDs, salaries, photographs or other employee data, and run workflows that use secrets only for the owner (never from fork pull requests).
 10. Tests: `npm run check`, plus platform `tgcloud run`, `tgcloud migrate --dry-run` when connected. No automatic deployments.
 11. AI interface: use typed commands in `tgcloud/lib/service.js`, tenant isolation and an explicit approval step for payroll and corrections. See `docs/AI_INTERFACE.md`.
 12. Important: browser key stored in IndexedDB cannot prove physical location or block active QR relay. Don't claim otherwise.
